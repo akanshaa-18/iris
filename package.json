@@ -1,0 +1,29 @@
+{
+  "name": "iris",
+  "version": "0.0.1",
+  "description": "Personalizing Adobe.com pages on the edge",
+  "main": "main.js",
+  "scripts": {
+    "bundle": "./bundle.sh",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adobecom/iris.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/adobecom/iris/issues"
+  },
+  "homepage": "https://github.com/adobecom/iris#readme",
+  "engines": {
+    "npm": "10.9.2",
+    "node": "22.16.0"
+  },
+  "devDependencies": {
+    "@types/akamai-edgeworkers": "^1.1.18",
+    "esbuild": "^0.25.5",
+    "typescript": "^5.8.3"
+  }
+}
