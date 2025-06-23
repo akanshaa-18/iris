@@ -1,4 +1,27 @@
+#!/bin/bash
+set -e  # Exit on any error
+
+# Configuration - modify these variables as needed
+EXTERNALS=(
+  "html-rewriter"
+  "http-request"
+  "create-response"
+  "log"
+)
+
+# Convert array to esbuild external format
+EXTERNAL_ARGS=""
+for external in "${EXTERNALS[@]}"; do
+  EXTERNAL_ARGS="$EXTERNAL_ARGS --external:$external"
+done
+
+echo "Type checking TypeScript files..."
+./node_modules/.bin/tsc --noEmit
+
+echo "Building bundle..."
 rm -rf dist
-./node_modules/.bin/esbuild src/main.ts --bundle --external:html-rewriter --external:http-request --external:create-response --platform=neutral --outdir=dist
+./node_modules/.bin/esbuild src/Main.ts --bundle $EXTERNAL_ARGS --platform=neutral --outdir=dist
 cp bundle.json dist/bundle.json
 tar -czvf ak-bundle.tgz dist/main.js dist/bundle.json
+
+echo "Build completed successfully!"
