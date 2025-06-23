@@ -1,9 +1,9 @@
 import { PersonalizationData } from "./Personalize";
 
-export type Instructions = unknown[];
+export type Instruction = unknown;
 
 export const parseInstructionsFrom = async (
   personalizationData: PersonalizationData
-): Promise<Instructions[]> => {
-  throw new Error("Not Yet Implemented");
+): Promise<Instruction[]> => {
+  return [] as Instruction[];
 };

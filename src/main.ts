@@ -31,7 +31,8 @@ async function responseProvider(request: EW.ResponseProviderRequest) {
     const authState = await authenticate(getCookie(request.getHeaders())('aux_sid'));
 
     logger.log("Make Call to AEP (Not Yet Implemented)");
-    const personalizationData = getPersonalizationData(request, authState);
+    const personalizationData = 
+      await getPersonalizationData(request, authState);
 
     logger.log("Parse instructions from Personalization Data (Not Yet Implemented)");
     const instructions = await parseInstructionsFrom(personalizationData);
