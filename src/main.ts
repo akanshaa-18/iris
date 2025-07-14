@@ -68,3 +68,56 @@ const shouldNotPersonalize = (
 export {
   responseProvider
 };
+
+type Locale = {
+  ietf: string;
+  language: string;
+  country?: string;
+  prefix: string;
+};
+
+export function determineLocale(
+  request: EW.ResponseProviderRequest, 
+  url: URL
+): Locale {
+  const headers = request.getHeaders();
+  const acceptLanguageHeader = headers["Accept-Language"];
+  const acceptLanguage = Array.isArray(acceptLanguageHeader) ? 
+    acceptLanguageHeader[0] || "" : 
+    acceptLanguageHeader || "";
+  const defaultLocale: Locale = { 
+    ietf: "en-US", 
+    language: "en", 
+    country: "US", 
+    prefix: "" 
+  };
+
+  const pathParts = url.pathname.split("/").filter(Boolean);
+  if (pathParts.length > 0) {
+    const possibleLocale = pathParts[0].toLowerCase();
+    if (/^[a-z]{2}(-[a-z]{2})?$/.test(possibleLocale)) {
+      const [language, country] = possibleLocale.split("-");
+      return {
+        ietf: possibleLocale,
+        language,
+        country: country ? country.toUpperCase() : undefined,
+        prefix: `/${language}${country ? `-${country}` : ""}`,
+      };
+    }
+  }
+
+  if (acceptLanguage && acceptLanguage !== "") {
+    const preferredLocale = acceptLanguage.split(",")[0].trim();
+    if (preferredLocale.includes("-")) {
+      const [language, country] = preferredLocale.split("-");
+      return {
+        ietf: preferredLocale,
+        language,
+        country: country.toUpperCase(),
+        prefix: `/${language}-${country.toLowerCase()}`,
+      };
+    }
+  }
+
+  return defaultLocale;
+}
