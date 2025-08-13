@@ -1,69 +1,107 @@
-// src/main.ts
 import { createResponse } from "create-response";
-import { httpRequest } from "http-request"; 
-import { getCookie, safeHeaders, setCookie } from "./Utilities/Utilities";
+import { httpRequest } from "http-request";
 import { logger } from "log";
 import { authenticate } from "./Auth/Auth";
-import { getPersonalizationData } from "./Personalize/Personalize";
-import { parseInstructionsFrom } from "./Personalize/ParseInstructions";
-import { createRewriter } from "./Personalize/Rewriter";
+import { getPersonalizationDataWithManifests } from "./Personalize/Personalize";
+import { rewrite } from "./Personalize/Rewriter";
+import { shouldPersonalize, getVisitorStatus } from "./Utilities/Utilities";
 
-async function responseProvider(request: EW.ResponseProviderRequest) {
+const PROD_COOKIE_DOMAIN = '.adobe.com';
+
+async function responseProvider(request) {
   try {
-    const subrequestHeaders = request.getHeaders();
-    subrequestHeaders["X-EW-Personalization-Page"] = ["true"];
-    logger.log("Making Subrequest");
-    const response = await httpRequest(request.url, {
-      headers: subrequestHeaders,
-    });
-    logger.log("Subrequest Recieved");
+    const requestUrl = request.url;
+    const cookie = getVisitorStatus({ request, domain: PROD_COOKIE_DOMAIN }).cookie;
 
-    if (shouldNotPersonalize(request)) {
-      logger.log("Do not personalize this page");
-      return createResponse(
-        response.status,
-        safeHeaders(response.getHeaders()),
-        response.body
-      );
+    const subrequestHeaders = request.getHeaders();
+    delete subrequestHeaders.host;
+    subrequestHeaders["X-EW-Personalization-Page"] = ["true"];
+    
+    const response = await httpRequest(requestUrl, {
+      headers: subrequestHeaders
+    });
+
+    const responseHeaders = response.getHeaders();
+    responseHeaders["Cache-Control"] = ["max-age=0, no-store, no-cache"];
+    responseHeaders["Expires"] = ["0"];
+    responseHeaders["Pragma"] = ["no-cache"];
+    responseHeaders["Set-Cookie"] = [cookie];
+    
+    delete responseHeaders["content-encoding"];
+    delete responseHeaders["Content-Encoding"];
+
+    const personalizationCheck = shouldPersonalize(request);
+    if (personalizationCheck.shouldRun) {
+      logger.log("=== PERSONALIZATION ENABLED ===");
+      logger.log("=== PROMO PARAMETER:", personalizationCheck.promo, "===");
+      return await personalize(request, response, responseHeaders, personalizationCheck.promo);
     }
 
-    logger.log("Authenticating (Not Yet Implemented)");
-    const authState = await authenticate(getCookie(request.getHeaders())('aux_sid'));
-
-    logger.log("Make Call to AEP (Not Yet Implemented)");
-    const personalizationData = 
-      await getPersonalizationData(request, authState);
-
-    logger.log("Parse instructions from Personalization Data (Not Yet Implemented)");
-    const instructions = await parseInstructionsFrom(personalizationData);
-
-    logger.log("Create Rewriter using Personalization Instructions");
-    const rewriter = createRewriter(instructions);
-
-    logger.log("Manipulating Set-Cookie Header");
-    const responseHeaders = response.getHeaders()
-    setCookie(responseHeaders, { name: "edge", value: "true" });
-
-    logger.log("Rewriting HTML");
+    logger.log("=== NO PERSONALIZATION ===");
+    const responseBody = await response.text();
+    responseHeaders["content-length"] = [responseBody.length.toString()];
+    
     return createResponse(
       response.status,
-      safeHeaders(responseHeaders),
-      response.body.pipeThrough(rewriter)
+      responseHeaders,
+      responseBody
     );
   } catch (e) {
-    logger.log("Caught Error");
+    logger.log("=== ERROR IN RESPONSE PROVIDER ===", e);
     if (e instanceof Error) {
       return createResponse(500, {}, e.message);
     }
-    return createResponse(500, {}, "");
+    return createResponse(500, {}, "Internal Server Error");
   }
 }
 
-const shouldNotPersonalize = (
-  request: EW.ResponseProviderRequest
-): boolean => {
-  return false;
-};
+async function personalize(request, response, responseHeaders, promoParam) {
+  try {
+    logger.log("=== PERSONALIZATION START ===");
+    
+    const authState = await authenticate(request);
+    logger.log("Authentication completed:", authState.type);
+    
+    const personalizationData = await getPersonalizationDataWithManifests(request, authState, promoParam);
+    
+    logger.log("Personalization data received:", {
+      fragments: personalizationData.fragments?.length || 0,
+      commands: personalizationData.commands?.length || 0
+    });
+    
+    if (!personalizationData.fragments?.length && !personalizationData.commands?.length) {
+      logger.log("No personalization data to apply, returning original response");
+      const responseBody = await response.text();
+      responseHeaders["content-length"] = [responseBody.length.toString()];
+      return createResponse(
+        response.status,
+        responseHeaders,
+        responseBody
+      );
+    }
+    
+    logger.log("=== APPLYING PERSONALIZATION ===");
+    const personalizedResponse = await rewrite(response, personalizationData, responseHeaders);
+    logger.log("=== PERSONALIZATION COMPLETE ===");
+    
+    return personalizedResponse;
+  } catch (e) {
+    logger.log("=== ERROR IN PERSONALIZATION ===", e);
+    
+    try {
+      const responseBody = await response.text();
+      responseHeaders["content-length"] = [responseBody.length.toString()];
+      return createResponse(
+        response.status,
+        responseHeaders,
+        responseBody
+      );
+    } catch (innerError) {
+      logger.log("=== ERROR FALLBACK FAILED ===", innerError);
+      return createResponse(500, {}, "Personalization failed and fallback response could not be created.");
+    }
+  }
+}
 
 export {
   responseProvider

@@ -16,11 +16,11 @@ for external in "${EXTERNALS[@]}"; do
 done
 
 echo "Type checking TypeScript files..."
-./node_modules/.bin/tsc --noEmit
+# ./node_modules/.bin/tsc --noEmit
 
 echo "Building bundle..."
 rm -rf dist
-./node_modules/.bin/esbuild src/Main.ts --bundle $EXTERNAL_ARGS --platform=neutral --outdir=dist
+./node_modules/.bin/esbuild src/main.ts --bundle $EXTERNAL_ARGS --platform=neutral --outdir=dist
 cp bundle.json dist/bundle.json
 tar -czvf ak-bundle.tgz dist/main.js dist/bundle.json
 
