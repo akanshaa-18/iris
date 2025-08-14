@@ -16,7 +16,6 @@ async function responseProvider(request) {
     const subrequestHeaders = request.getHeaders();
     delete subrequestHeaders.host;
     subrequestHeaders["X-EW-Personalization-Page"] = ["true"];
-    
     const response = await httpRequest(requestUrl, {
       headers: subrequestHeaders
     });
@@ -30,44 +29,37 @@ async function responseProvider(request) {
     delete responseHeaders["content-encoding"];
     delete responseHeaders["Content-Encoding"];
 
-    const personalizationCheck = shouldPersonalize(request);
-    if (personalizationCheck.shouldRun) {
-      logger.log("=== PERSONALIZATION ENABLED ===");
-      logger.log("=== PROMO PARAMETER:", personalizationCheck.promo, "===");
-      return await personalize(request, response, responseHeaders, personalizationCheck.promo);
+    if (shouldPersonalize(request)) {
+      return await personalize(request, response, responseHeaders);
     }
 
-    logger.log("=== NO PERSONALIZATION ===");
     const responseBody = await response.text();
     responseHeaders["content-length"] = [responseBody.length.toString()];
-    
+    logger.log("=== RESPONSE DEBUG ===");
+    logger.log("Response body length:", responseBody.length);
+    logger.log("Content-Length header updated to:", responseBody.length);
+    logger.log("Response headers being sent:", JSON.stringify(responseHeaders, null, 2));
+    logger.log("Content-Length header:", responseHeaders["content-length"]);
+    logger.log("Content-Type header:", responseHeaders["content-type"]);
     return createResponse(
       response.status,
       responseHeaders,
       responseBody
     );
   } catch (e) {
-    logger.log("=== ERROR IN RESPONSE PROVIDER ===", e);
     if (e instanceof Error) {
       return createResponse(500, {}, e.message);
     }
-    return createResponse(500, {}, "Internal Server Error");
+    return createResponse(500, {}, "");
   }
 }
 
-async function personalize(request, response, responseHeaders, promoParam) {
+async function personalize(request, response, responseHeaders) {
   try {
-    logger.log("=== PERSONALIZATION START ===");
-    
     const authState = await authenticate(request);
-    logger.log("Authentication completed:", authState.type);
     
-    const personalizationData = await getPersonalizationDataWithManifests(request, authState, promoParam);
-    
-    logger.log("Personalization data received:", {
-      fragments: personalizationData.fragments?.length || 0,
-      commands: personalizationData.commands?.length || 0
-    });
+    // Use Phase 5 enhanced personalization function
+    const personalizationData = await getPersonalizationDataWithManifests(request, authState);
     
     if (!personalizationData.fragments?.length && !personalizationData.commands?.length) {
       logger.log("No personalization data to apply, returning original response");
@@ -80,26 +72,23 @@ async function personalize(request, response, responseHeaders, promoParam) {
       );
     }
     
-    logger.log("=== APPLYING PERSONALIZATION ===");
-    const personalizedResponse = await rewrite(response, personalizationData, responseHeaders);
-    logger.log("=== PERSONALIZATION COMPLETE ===");
+    logger.log("Phase 5: Rewriting HTML with enhanced personalization data");
+    logger.log("Personalization data:", {
+      fragments: personalizationData.fragments?.length || 0,
+      commands: personalizationData.commands?.length || 0
+    });
     
+    const personalizedResponse = await rewrite(response, personalizationData, responseHeaders);
     return personalizedResponse;
   } catch (e) {
-    logger.log("=== ERROR IN PERSONALIZATION ===", e);
-    
-    try {
-      const responseBody = await response.text();
-      responseHeaders["content-length"] = [responseBody.length.toString()];
-      return createResponse(
-        response.status,
-        responseHeaders,
-        responseBody
-      );
-    } catch (innerError) {
-      logger.log("=== ERROR FALLBACK FAILED ===", innerError);
-      return createResponse(500, {}, "Personalization failed and fallback response could not be created.");
-    }
+    logger.log("Phase 5: Error in personalization:", e);
+    const responseBody = await response.text();
+    responseHeaders["content-length"] = [responseBody.length.toString()];
+    return createResponse(
+      response.status,
+      responseHeaders,
+      responseBody
+    );
   }
 }
 

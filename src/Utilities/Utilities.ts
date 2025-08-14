@@ -35,17 +35,11 @@ export const shouldPersonalize = (request) => {
     });
   }
   
-  const shouldRun = params["edge-pers"] !== undefined ||
+  return params["edge-pers"] !== undefined ||
     params["target"] === "on" ||
     params["hybrid-pers"] === "on" ||
     params["hybrid_test"] === "true" ||
     params["perf_test"] === "true";
-  
-  // Return both the decision and the promo parameter
-  return {
-    shouldRun,
-    promo: params["promo"] !== undefined ? params["promo"] : null
-  };
 };
 
 export const determineLocale = (request, url) => {

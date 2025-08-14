@@ -1562,108 +1562,56 @@ let isPostLCP = false;
 // Function to parse manifest URL and add source
 function parseManifestUrlAndAddSource(manifestString: any, source: string) {
   logger.log('Phase 5: Parsing manifest URL and adding source:', { manifestString, source });
+  if (!manifestString || typeof manifestString !== 'string') return [];
   
-  // Handle different input types
-  if (!manifestString) return [];
-  
-  // If it's already an array of manifest objects, return as is
-  if (Array.isArray(manifestString)) {
-    return manifestString.map(manifest => ({
-      manifestPath: manifest.manifestPath || manifest.manifest,
-      source: [source]
-    }));
-  }
-  
-  // If it's a string, parse it
-  if (typeof manifestString === 'string') {
-    return manifestString.toLowerCase()
-      .split(/,|(\s+)|(\\n)/g)
-      .filter((path) => path?.trim())
-      .map((manifestPath) => ({ manifestPath, source: [source] }));
-  }
-  
-  // If it's an object with manifestPath, convert to array format
-  if (typeof manifestString === 'object' && manifestString.manifestPath) {
-    return [{
-      manifestPath: manifestString.manifestPath,
-      source: [source]
-    }];
-  }
-  
-  // Default: return empty array
-  return [];
+  return manifestString.toLowerCase()
+    .split(/,|(\s+)|(\\n)/g)
+    .filter((path) => path?.trim())
+    .map((manifestPath) => ({ manifestPath, source: [source] }));
 }
 
-// Function to combine MEP sources (server-side adaptation) with promo support
+// Function to combine MEP sources (server-side adaptation)
 export const combineMepSources = async (
-  persEnabled: any,
-  rocPersEnabled: any,
-  promoEnabled: any,
+  persEnabled: boolean,
+  rocPersEnabled: boolean,
+  promoEnabled: boolean,
   mepParam: string,
-  request?: any
+  request: any,
 ) => {
-  logger.log('Phase 7: Combining MEP sources with promo support:', { persEnabled, rocPersEnabled, promoEnabled });
+  logger.log('Phase 5: Combining MEP sources using getMepEnablement for consistency:', { persEnabled, rocPersEnabled, promoEnabled });
   
   let persManifests: any[] = [];
 
-  // Handle persEnabled (could be string, boolean, or array)
-  if (persEnabled) {
-    const persManifestArray = parseManifestUrlAndAddSource(persEnabled, 'pzn');
-    persManifests = persManifests.concat(persManifestArray);
+  if (persEnabled && typeof persEnabled === 'string') {
+    persManifests = parseManifestUrlAndAddSource(persEnabled, 'pzn');
   }
 
-  // Handle rocPersEnabled
-  if (rocPersEnabled) {
+  if (rocPersEnabled && typeof rocPersEnabled === 'string') {
     const rocPersManifest = parseManifestUrlAndAddSource(rocPersEnabled, 'pzn-roc');
     persManifests = persManifests.concat(rocPersManifest);
   }
 
-  // Handle promoEnabled with enhanced promo support
   if (promoEnabled) {
-    logger.log('Phase 7: Processing promotional sources with enhanced support');
+    logger.log('Phase 5: Processing promotional sources using getMepEnablement');
     
-    try {
-      // Get locale code from request
-      const localeCode = determineLocale(request, { hostname: request.host }).ietf || 'en-US';
-      logger.log('Phase 7: Detected locale code:', localeCode);
-      
-      // Parse search parameters using custom implementation
-      const query = request.query || '';
-      const searchParams = createSearchParams(query);
-      
-      // Get manifest names from metadata
-      const manifestNames = {
-        manifestnames: getMetadata('manifestnames', request),
-        americas_manifestnames: getMetadata('americas_manifestnames', request),
-        emea_manifestnames: getMetadata('emea_manifestnames', request),
-        apac_manifestnames: getMetadata('apac_manifestnames', request),
-        jp_manifestnames: getMetadata('jp_manifestnames', request)
-      };
-      
-      logger.log('Phase 7: Retrieved manifest names from metadata:', manifestNames);
-      
-      // Get promo manifests using the promo functionality
-      const promoManifestData = getPromoManifests(manifestNames, searchParams, localeCode, request);
-      logger.log('Phase 7: Retrieved promo manifests:', promoManifestData.length);
-      
-      // Filter out disabled manifests
-      const enabledPromoManifests = promoManifestData.filter(manifest => !manifest.disabled);
-      logger.log('Phase 7: Enabled promo manifests:', enabledPromoManifests.length);
-      
-      persManifests = persManifests.concat(enabledPromoManifests);
-      
-    } catch (error) {
-      logger.log('Phase 7: Error processing promo manifests:', error);
+    // Use getMepEnablement to get promo enablement
+    const promoEnablement = getMepEnablement('manifestnames', PROMO_PARAM, request);
+    logger.log('Phase 5: Promo enablement from getMepEnablement:', promoEnablement);
+    
+    if (promoEnablement && typeof promoEnablement === 'object' && Object.keys(promoEnablement).length > 0) {
+      logger.log('Phase 5: Found promo manifests in enablement:', promoEnablement);
+      // TODO: Process promo manifests when we have access to HTML content
+      // For now, we'll log the enablement but skip processing
+    } else {
+      logger.log('Phase 5: No promo manifests found in enablement');
     }
   }
 
-  // Handle mepParam
   if (mepParam && mepParam !== 'off') {
     const persManifestPaths = persManifests.map((manifest) => {
       const { manifestPath } = manifest;
       if (manifestPath?.startsWith('/')) return manifestPath;
       try {
-        // Server-side URL parsing
         if (manifestPath.startsWith('http')) {
           const domainMatch = manifestPath.match(/https?:\/\/([^\/]+)(\/.*)/);
           return domainMatch ? domainMatch[2] : manifestPath;
@@ -1682,111 +1630,68 @@ export const combineMepSources = async (
     });
   }
   
-  logger.log('Phase 7: Combined manifests with promo support:', persManifests.length);
+  logger.log('Phase 5: Combined manifests:', persManifests.length);
   return persManifests;
 };
 
-// Main personalization initialization function with enhanced promo support
-export async function init(enablements: any = {}) {
-  // logger.log('Phase 7: Initializing personalization with enhanced promo support:', enablements);
+// Main personalization initialization function
+export async function init(enablements: any = {}, request: any, config: any) {
+  logger.log('Phase 5: Initializing personalization with enablements:', enablements);
   
   let manifests: any[] = [];
   const {
     mepParam, mepHighlight, mepButton, pzn, pznroc, promo, enablePersV2,
     target, ajo, countryIPPromise, mepgeolocation, targetInteractionPromise, calculatedTimeout,
-    postLCP, request,
+    postLCP,
   } = enablements;
   
   if (postLCP) {
     isPostLCP = true;
-    // logger.log('Phase 7: Post-LCP mode enabled');
+    logger.log('Phase 5: Post-LCP mode enabled');
   } else {
-    // logger.log('Phase 7: Pre-LCP mode - processing manifests with promo support');
+    logger.log('Phase 5: Pre-LCP mode - processing manifests');
     
     // Parse MEP parameter
     const variantOverride = parseMepParam(mepParam);
     
-    // Only process promo manifests if promo parameter is enabled
-    let promoManifests: any[] = [];
-    if (promo && promo !== 'off') {
-      try {
-        // Get locale code from request
-        const localeCode = determineLocale(request, { hostname: request.host }).ietf || 'en-US';
-        // logger.log('Phase 7: Detected locale code for promo processing:', localeCode);
-        
-        // Parse search parameters using custom implementation
-        const query = request.query || '';
-        const searchParams = createSearchParams(query);
-        
-        // Get manifest names from metadata
-        const manifestNames = {
-          manifestnames: getMetadata('manifestnames', request),
-          americas_manifestnames: getMetadata('americas_manifestnames', request),
-          emea_manifestnames: getMetadata('emea_manifestnames', request),
-          apac_manifestnames: getMetadata('apac_manifestnames', request),
-          jp_manifestnames: getMetadata('jp_manifestnames', request)
-        };
-        
-        // logger.log('Phase 7: Retrieved manifest names from metadata:', manifestNames);
-        
-        // Get promo manifests using the promo functionality
-        const promoManifestData = getPromoManifests(manifestNames, searchParams, localeCode, request);
-        // logger.log('Phase 7: Retrieved promo manifests:', promoManifestData.length);
-        
-        // Filter out disabled manifests
-        const enabledPromoManifests = promoManifestData.filter(manifest => !manifest.disabled);
-        // logger.log('Phase 7: Enabled promo manifests:', enabledPromoManifests.length);
-        
-        promoManifests = enabledPromoManifests;
-        
-      } catch (error) {
-        logger.log('Phase 7: Error processing promo manifests:', error);
-      }
-    } else {
-      logger.log('Phase 7: Promo processing disabled - promo parameter:', promo);
-    }
+    // Combine MEP sources
+    manifests = manifests.concat(await combineMepSources(pzn, pznroc, promo, mepParam, request));
     
-    // Process Target manifests if available
-    if (pzn && pzn.length > 0) {
-      // logger.log('Phase 7: Processing Target manifests:', pzn.length);
-      manifests = manifests.concat(pzn);
-    }
-    
-    // Add promo manifests to the list
-    if (promoManifests.length > 0) {
-      // logger.log('Phase 7: Adding promo manifests to processing list:', promoManifests.length);
-      manifests = manifests.concat(promoManifests);
-    }
+    // Preload manifest URLs
+    manifests?.forEach((manifest) => {
+      if (manifest.disabled) return;
+      logger.log('Phase 5: Preloading manifest:', manifest.manifestPath);
+    });
   }
 
   // Handle Target/AJO integration (simplified for server-side)
   if (target === true || ajo === true) {
-    // logger.log('Phase 7: Processing Target/AJO manifests');
+    logger.log('Phase 5: Processing Target/AJO manifests');
     // Server-side: simplified Target integration
   }
   
   if (postLCP) {
-    // logger.log('Phase 7: Post-LCP processing');
+    logger.log('Phase 5: Post-LCP processing');
     // Server-side: simplified post-LCP handling
   }
   
   try {
     if (manifests?.length) {
-      // logger.log('Phase 7: Applying personalization to manifests with promo support');
-      const result = await applyPers({ manifests });
-      // logger.log('Phase 7: Personalization applied successfully with promo support:', result);
+      logger.log('Phase 5: Applying personalization to manifests');
+      const result = await applyPers({ manifests }, request, config);
+      logger.log('Phase 5: Personalization applied successfully:', result);
       return result;
     }
   } catch (e) {
-    logger.log(`Phase 7: MEP Error: ${e.toString()}`);
+    logger.log(`Phase 5: MEP Error: ${e.toString()}`);
   }
   
   return null;
 }
 
 // Enhanced getPersonalizationData function that integrates manifest processing
-export async function getPersonalizationDataWithManifests(request: any, authState: any, promoParam?: any) {
-  // logger.log('Phase 7: Starting enhanced manifest-enhanced personalization with promo support');
+export async function getPersonalizationDataWithManifests(request: any, authState: any) {
+  logger.log('Phase 5: Getting personalization data with manifest processing');
   
   try {
     // First, get raw data from Adobe Target
@@ -1797,96 +1702,253 @@ export async function getPersonalizationDataWithManifests(request: any, authStat
     const manifests = extractManifestsFromTargetResponse(rawData);
     
     if (manifests.length > 0) {
-      // logger.log('Phase 7: Found manifests in Target response:', manifests.length);
+      logger.log('Phase 5: Found manifests in Target response:', manifests.length);
       
-      // Initialize personalization with manifests from Target and request context
-      const manifestResult = await init({
-        pzn: manifests, // Pass the extracted manifests
-        target: true, // Enable Target integration
-        postLCP: false, // Pre-LCP processing
-        request: request, // Pass request for promo processing
-        promo: promoParam, // Pass the promo parameter to control promo processing
-      });
+      // Extract enablements from request parameters and metadata
+      const enablements = extractEnablements(request);
+      logger.log('Phase 5: Extracted enablements:', enablements);
+      
+      // Create config with proper mep initialization
+      const config = createConfigWithMep(request, enablements);
+      
+      // Initialize personalization with manifests
+      const manifestResult = await init(enablements, request, config);
       
       if (manifestResult) {
         // Merge manifest-based personalization with Target-based personalization
         const mergedData = mergePersonalizationData(parsedData, manifestResult);
-        
-        // Apply advanced features
-        const enhancedData = await applyAdvancedFeatures(mergedData, request, authState);
-        
-        // logger.log('Phase 7: Enhanced personalization data with promo support:', enhancedData);
-        return enhancedData;
+        logger.log('Phase 5: Merged personalization data:', mergedData);
+        return mergedData;
       }
     }
     
-    // Fallback to original Target-based personalization with promo support
-    // logger.log('Phase 7: Using Target-based personalization with promo support');
-    const enhancedData = await applyAdvancedFeatures(parsedData, request, authState);
-    return enhancedData;
+    // Fallback to original Target-based personalization
+    logger.log('Phase 5: Using Target-based personalization only');
+    return parsedData;
     
   } catch (error) {
-    logger.log('Phase 7: Error in enhanced manifest-enhanced personalization with promo support:', error);
+    logger.log('Phase 5: Error in manifest-enhanced personalization:', error);
     // Fallback to basic personalization
     return await getPersonalizationData(request, authState);
   }
 }
 
-// Function to apply advanced features to personalization data
-async function applyAdvancedFeatures(data: any, request: any, authState: any) {
-  logger.log('Phase 6: Applying advanced features to personalization data');
+// Function to extract enablements from request using getMepEnablement for consistency
+function extractEnablements(request: any) {
+  logger.log('Phase 5: Extracting enablements using getMepEnablement for consistency');
   
-  try {
-    // Create config for advanced features
-    const config = {
-      env: { name: 'stage' }, // Will be determined by environment
-      locale: { ietf: 'en-US', region: 'US' }, // Will be determined by request
-      mep: {
-        prefix: 'en-us',
-        countryIP: 'US',
-        countryChoice: 'US',
-      },
-      placeholders: {},
-      entitlements: [],
-    };
-    
-    // Set MEP country
-    await setMepCountry(config);
-    
-    // Apply placeholders to fragments and commands
-    if (data.fragments) {
-      data.fragments = data.fragments.map((fragment: any) => {
-        if (fragment.content) {
-          fragment.content = replacePlaceholders(fragment.content, config.placeholders);
+  // Extract from URL parameters with proper error handling
+  let mepParam = null;
+  let mepHighlight = null;
+  let mepButton = null;
+  let martech = null;
+  
+  const queryParams = getQueryParams(request.query);
+  if (queryParams && queryParams.searchParams && queryParams.searchParams.get) {
+    mepParam = queryParams.searchParams.get('mep');
+    mepHighlight = queryParams.searchParams.get('mepHighlight');
+    mepButton = queryParams.searchParams.get('mepButton');
+    martech = queryParams.searchParams.get('martech');
+  } else {
+    // Fallback: manual query parameter parsing
+    const queryString = request.query || '';
+    if (queryString) {
+      const params = new Map();
+      queryString.split('&').forEach(pair => {
+        const [key, value] = pair.split('=');
+        if (key && value) {
+          params.set(key, decodeURIComponent(value));
         }
-        return fragment;
       });
+      mepParam = params.get('mep');
+      mepHighlight = params.get('mepHighlight');
+      mepButton = params.get('mepButton');
+      martech = params.get('martech');
     }
-    
-    if (data.commands) {
-      data.commands = data.commands.map((command: any) => {
-        if (command.content) {
-          command.content = replacePlaceholders(command.content, config.placeholders);
-        }
-        return command;
-      });
-    }
-    
-    // Add analytics
-    addMepAnalytics(config, request.getHeaders()['User-Agent']);
-    
-    logger.log('Phase 6: Advanced features applied successfully');
-    return data;
-    
-  } catch (error) {
-    logger.log('Phase 6: Error applying advanced features:', error);
-    return data; // Return original data if advanced features fail
   }
+  
+  // Extract from metadata using getMepEnablement for consistency
+  const pzn = getMepEnablement('personalization', false, request);
+  const pznroc = getMepEnablement('personalization-roc', false, request);
+  const promo = getMepEnablement('manifestnames', PROMO_PARAM, request);
+  const target = martech === 'off' ? false : getMepEnablement('target', false, request);
+  const ajo = martech === 'off' ? false : getMepEnablement('ajo', false, request);
+  const mepgeolocation = getMepEnablement('mepgeolocation', false, request);
+  const enablePersV2 = getMepEnablement('personalization-v2', false, request);
+  
+  logger.log('Phase 5: Extracted enablements using getMepEnablement:', {
+    mepParam,
+    mepHighlight,
+    mepButton,
+    martech,
+    pzn,
+    pznroc,
+    promo,
+    target,
+    ajo,
+    mepgeolocation,
+    enablePersV2
+  });
+  
+  return {
+    mepParam,
+    mepHighlight,
+    mepButton,
+    pzn,
+    pznroc,
+    promo,
+    target,
+    ajo,
+    mepgeolocation,
+    enablePersV2,
+    postLCP: false,
+  };
+}
+
+// Function to get metadata value from headers
+function getMetadataValue(headers: any, key: string): string | null {
+  const metaKey = `x-metadata-${key}`;
+  return headers[metaKey]?.[0] || null;
+}
+
+// Function to extract metadata from HTML content
+function extractMetadataFromHTML(htmlContent: string, key: string): string | null {
+  // Create a regex to find meta tags with the given name
+  const metaRegex = new RegExp(`<meta\\s+name=["']${key}["']\\s+content=["']([^"']*)["']`, 'i');
+  const match = htmlContent.match(metaRegex);
+  return match ? match[1] : null;
+}
+
+// Function to extract all metadata from HTML content
+function extractAllMetadataFromHTML(htmlContent: string): Record<string, string> {
+  const metadata: Record<string, string> = {};
+  
+  // Find all meta tags with name attribute
+  const metaRegex = /<meta\s+name=["']([^"']*)["']\s+content=["']([^"']*)["']/gi;
+  let match;
+  
+  while ((match = metaRegex.exec(htmlContent)) !== null) {
+    const [, name, content] = match;
+    metadata[name] = content;
+  }
+  
+  return metadata;
+}
+
+// Constants for MEP enablement
+const PROMO_PARAM = 'promo';
+
+// Function to get MEP value (converts string values to appropriate types)
+function getMepValue(val: string | null): any {
+  if (!val) return false;
+  
+  const valMap: Record<string, any> = { 
+    on: true, 
+    off: false, 
+    postLCP: 'postlcp' 
+  };
+  const finalVal = val.toLowerCase().trim();
+  if (finalVal in valMap) return valMap[finalVal];
+  return finalVal;
+}
+
+// Function to get metadata value (server-side adaptation)
+function getMdValue(key: string, request: any): any {
+  const value = getMetadataValue(request.getHeaders(), key);
+  if (value) {
+    return getMepValue(value);
+  }
+  return false;
+}
+
+// Function to get promo MEP enablement (server-side adaptation)
+function getPromoMepEnablement(request: any): any {
+  const mds = [
+    'apac_manifestnames',
+    'emea_manifestnames',
+    'americas_manifestnames',
+    'jp_manifestnames',
+    'manifestnames',
+  ];
+  
+  const mdObject: Record<string, any> = {};
+  
+  mds.forEach((key) => {
+    const val = getMdValue(key, request);
+    if (val) {
+      mdObject[key] = val;
+    }
+  });
+  
+  if (Object.keys(mdObject).length > 0) {
+    return mdObject;
+  }
+  return false;
+}
+
+// Function to get MEP enablement (server-side adaptation)
+export function getMepEnablement(mdKey: string, paramKey: string | false = false, request: any): any {
+  // Get query parameters
+  const queryParams = getQueryParams(request.query);
+  let paramValue = null;
+  
+  if (queryParams && queryParams.searchParams && queryParams.searchParams.get) {
+    paramValue = queryParams.searchParams.get(paramKey || mdKey);
+  } else {
+    // Fallback: manual query parameter parsing
+    const queryString = request.query || '';
+    if (queryString) {
+      const params = new Map();
+      queryString.split('&').forEach(pair => {
+        const [key, value] = pair.split('=');
+        if (key && value) {
+          params.set(key, decodeURIComponent(value));
+        }
+      });
+      paramValue = params.get(paramKey || mdKey);
+    }
+  }
+  
+  if (paramValue) return getMepValue(paramValue);
+  if (PROMO_PARAM === paramKey) return getPromoMepEnablement(request);
+  return getMdValue(mdKey, request);
+}
+
+// Function to create config with proper mep initialization
+function createConfigWithMep(request: any, enablements: any) {
+  const { mepParam, mepButton, target, ajo, enablePersV2, mepgeolocation } = enablements;
+  
+  // Get locale from request path
+  const path = request.path;
+  const pathParts = path.split('/');
+  const localeCode = pathParts[1] || 'us';
+  
+  const config = {
+    mep: {
+      variantOverride: parseMepParam(mepParam),
+      highlight: (enablements.mepHighlight !== undefined && enablements.mepHighlight !== 'false'),
+      targetEnabled: target,
+      ajoEnabled: ajo,
+      experiments: [],
+      prefix: localeCode,
+      enablePersV2,
+      geoLocation: mepgeolocation,
+      preview: (mepButton !== 'off' && mepParam !== undefined),
+    },
+    locale: {
+      ietf: `${localeCode}-${localeCode.toUpperCase()}`,
+      region: localeCode,
+      prefix: `/${localeCode}`,
+    },
+    placeholders: {},
+  };
+  
+  return config;
 }
 
 // Function to extract manifests from Target response
 function extractManifestsFromTargetResponse(targetData: any) {
-  // logger.log('Phase 5: Extracting manifests from Target response');
+  logger.log('Phase 5: Extracting manifests from Target response');
   
   const manifests: any[] = [];
   
@@ -1939,13 +2001,91 @@ function mergePersonalizationData(targetData: any, manifestData: any) {
   return merged;
 }
 
-// Phase 6: Advanced Features - Placeholders, Country/IP, Entitlements, Analytics
-// Additional features migrated from personalization.js
+// Phase 6: Additional Utility Functions
 
-// Function to parse placeholders with advanced logic
-export function parsePlaceholders(placeholders: any[], config: any, selectedVariantName = '') {
-  logger.log('Phase 6: Parsing placeholders:', { placeholders: placeholders?.length, selectedVariantName });
+// Function to build variant info
+export function buildVariantInfo(variantNames: string[]) {
+  return variantNames.reduce((acc: any, name: string) => {
+    let nameArr = [name];
+    if (!name.startsWith(TARGET_EXP_PREFIX)) {
+      nameArr = name.split(/,(?![^(]*\))/);
+    }
+    acc[name] = nameArr.map((v: string) => v.trim()).filter(Boolean);
+    acc.allNames = [...acc.allNames, ...nameArr.map((v: string) => v.trim()).filter(Boolean)];
+    return acc;
+  }, { allNames: [] });
+}
+
+// Function to check for parameter match
+const checkForParamMatch = (paramStr: string, request: any) => {
+  const [name, val] = paramStr.split('param-')[1].split('=');
+  if (!name) return false;
   
+  const queryParams = getQueryParams(request.query);
+  const searchParamVal = queryParams.get(name.toLowerCase());
+  if (searchParamVal !== null) {
+    if (val) return val === searchParamVal;
+    return true; // if no val is set, just check for existence of param
+  }
+  return false;
+};
+
+// Function to check for previous page match
+export const checkForPreviousPageMatch = (previousPageStr: string, referer: string) => {
+  if (!referer) return false;
+  const previousPageString = previousPageStr.toLowerCase().split('previouspage-')[1];
+  try {
+    const refererUrl = new URL(referer);
+    return matchGlob(previousPageString, refererUrl.pathname);
+  } catch (e) {
+    return false;
+  }
+};
+
+// Function to normalize country
+function normCountry(country: string) {
+  return (country.toLowerCase() === 'uk' ? 'gb' : country.toLowerCase()).split('_')[0];
+}
+
+// Function to set MEP country
+async function setMepCountry(config: any, request: any) {
+  const queryParams = getQueryParams(request.query);
+  const country = queryParams.get('country');
+  const akamaiCode = queryParams.get('akamaiLocale')?.toLowerCase();
+  
+  config.mep = config.mep || {};
+  if (country) {
+    config.mep.countryChoice = normCountry(country);
+  }
+  if (akamaiCode) {
+    config.mep.countryIP = normCountry(akamaiCode);
+  }
+  if (!config.mep.countryChoice && config.mep.countryIP) {
+    config.mep.countryChoice = config.mep.countryIP;
+  }
+}
+
+// Function to check for country match
+function hasCountryMatch(str: string, config: any) {
+  if (str.includes('countrychoice') || str.includes('countryip')) {
+    const modifiedStr = str.replace('uk', 'gb');
+    return matchesCountryChoiceOrIP(modifiedStr, config);
+  }
+  return false;
+}
+
+// Function to check if matches country choice or IP
+const matchesCountryChoiceOrIP = (name: string, config: any) => {
+  if (!name.includes('countrychoice') && !name.includes('countryip')) return false;
+  const countryList = name.match(/\(([^)]+)\)/)?.[1]?.split(',').map((c: string) => c.trim());
+  if (!countryList?.length) return false;
+  const { countryChoice, countryIP } = config.mep;
+  const testCountry = name.includes('countrychoice') ? countryChoice : countryIP;
+  return countryList.includes(testCountry);
+};
+
+// Function to parse placeholders
+export function parsePlaceholders(placeholders: any[], config: any, selectedVariantName: string = '') {
   if (!placeholders?.length || selectedVariantName === 'default') return config;
   
   const { countryIP, countryChoice } = config.mep || {};
@@ -1974,681 +2114,31 @@ export function parsePlaceholders(placeholders: any[], config: any, selectedVari
       return res;
     }, {});
     config.placeholders = { ...(config.placeholders || {}), ...results };
-    logger.log('Phase 6: Applied placeholders:', results);
   }
 
-  createMartechMetadata(placeholders, config, key);
   return config;
 }
 
-// Function to check for country matches
-function hasCountryMatch(str: string, config: any) {
-  logger.log('Phase 6: Checking country match:', str);
-  const { countryIP, countryChoice } = config.mep || {};
-  
-  if (countryIP && str.includes(`countryip(${countryIP})`)) {
-    logger.log('Phase 6: Country IP match found');
-    return true;
-  }
-  
-  if (countryChoice && str.includes(`countrychoice(${countryChoice})`)) {
-    logger.log('Phase 6: Country choice match found');
-    return true;
-  }
-  
-  return false;
-}
-
-// Function to create martech metadata
-export async function createMartechMetadata(placeholders: any[], config: any, column: string) {
-  logger.log('Phase 6: Creating martech metadata:', { placeholders: placeholders?.length, column });
-  
-  if (!placeholders?.length || !column) return;
-  
-  try {
-    const metadata = placeholders.reduce((acc: any, item: any) => {
-      acc[item.key] = item[column];
-      return acc;
-    }, {});
-    
-    config.martechMetadata = metadata;
-    logger.log('Phase 6: Martech metadata created:', metadata);
-  } catch (error) {
-    logger.log('Phase 6: Error creating martech metadata:', error);
-  }
-}
-
-// Function to check for parameter matches
-const checkForParamMatch = (paramStr: string, request: any) => {
-  logger.log('Phase 6: Checking parameter match:', paramStr);
-  
-  const [name, val] = paramStr.split('param-')[1]?.split('=') || [];
-  if (!name) return false;
-  
-  // Server-side: parse query parameters from request
-  const query = request.query || '';
-  const params = new URLSearchParams(query);
-  const searchParamVal = params.get(name.toLowerCase());
-  
-  if (searchParamVal !== null) {
-    if (val) return val === searchParamVal;
-    return true; // if no val is set, just check for existence of param
-  }
-  return false;
-};
-
-// Function to check for previous page matches
-export const checkForPreviousPageMatch = (previousPageStr: string, referer: string) => {
-  logger.log('Phase 6: Checking previous page match:', { previousPageStr, referer });
-  
-  if (!referer) return false;
-  
-  const previousPageString = previousPageStr.toLowerCase().split('previouspage-')[1];
-  if (!previousPageString) return false;
-  
-  try {
-    // Server-side: extract pathname from referer
-    const refererUrl = referer.startsWith('http') ? referer : `https://${referer}`;
-    const pathname = refererUrl.split('/').slice(3).join('/') || '/';
-    return matchGlob(previousPageString, pathname);
-  } catch (error) {
-    logger.log('Phase 6: Error checking previous page match:', error);
-    return false;
-  }
-};
-
-// Function to trim names
-function trimNames(arr: string[]) {
-  return arr.map((v) => v.trim()).filter(Boolean);
-}
-
-// Function to build variant info
-export function buildVariantInfo(variantNames: string[]) {
-  logger.log('Phase 6: Building variant info:', variantNames);
-  
-  return variantNames.reduce((acc: any, name) => {
-    let nameArr = [name];
-    if (!name.startsWith(TARGET_EXP_PREFIX)) {
-      nameArr = name.split(/,(?![^(]*\))/);
-    }
-    acc[name] = trimNames(nameArr);
-    acc.allNames = [...(acc.allNames || []), ...trimNames(name.split(/(?:\([^)]*\))?,|&|\bnot\b/))];
-    return acc;
-  }, { allNames: [] });
-}
-
-// Function to get XLG list URL
-const getXLGListURL = (config: any) => {
-  const sheet = config.env?.name === 'prod' ? 'prod' : 'stage';
-  return `https://www.adobe.com/federal/assets/data/mep-xlg-tags.json?sheet=${sheet}`;
-};
-
 // Function to get entitlement map
 export const getEntitlementMap = async () => {
-  logger.log('Phase 6: Getting entitlement map');
-  
-  // Server-side: simplified entitlement handling
-  // In a real implementation, this would fetch from the XLG list
-  const entitlementMap = {
-    // Add common entitlements here
-    'creative_cloud': 'creative_cloud',
-    'photoshop': 'photoshop',
-    'illustrator': 'illustrator',
-    'indesign': 'indesign',
-  };
-  
-  logger.log('Phase 6: Entitlement map loaded:', entitlementMap);
-  return entitlementMap;
+  // Simplified for server-side - return empty object for now
+  return {};
 };
 
 // Function to get entitlements
 export const getEntitlements = async (data: any[]) => {
-  logger.log('Phase 6: Getting entitlements from data');
-  
   const entitlementMap = await getEntitlementMap();
-
-  return data.flatMap((destination) => {
+  return data.flatMap((destination: any) => {
     const ents = destination.segments?.flatMap((segment: any) => {
       const entMatch = entitlementMap[segment.id];
       return entMatch ? [entMatch] : [];
     });
-
     return ents || [];
   });
 };
 
-// Function to normalize country codes
-function normCountry(country: string) {
-  return country?.toLowerCase().replace(/[^a-z]/g, '');
-}
 
-// Function to set MEP country
-async function setMepCountry(config: any) {
-  logger.log('Phase 6: Setting MEP country');
-  
-  try {
-    // Server-side: simplified country detection
-    // In a real implementation, this would use geolocation services
-    const countryIP = 'US'; // Default for server-side
-    const countryChoice = 'US'; // Default for server-side
-    
-    if (!config.mep) config.mep = {};
-    config.mep.countryIP = countryIP;
-    config.mep.countryChoice = countryChoice;
-    
-    logger.log('Phase 6: MEP country set:', { countryIP, countryChoice });
-  } catch (error) {
-    logger.log('Phase 6: Error setting MEP country:', error);
-  }
-}
 
-// Function to add MEP analytics
-export const addMepAnalytics = (config: any, header: any) => {
-  logger.log('Phase 6: Adding MEP analytics');
-  
-  try {
-    // Server-side: simplified analytics
-    // In a real implementation, this would send analytics data
-    const analyticsData = {
-      timestamp: new Date().toISOString(),
-      config: {
-        env: config.env?.name,
-        locale: config.locale?.ietf,
-        mep: config.mep?.prefix,
-      },
-      header: header ? 'present' : 'absent',
-    };
-    
-    logger.log('Phase 6: MEP analytics data:', analyticsData);
-  } catch (error) {
-    logger.log('Phase 6: Error adding MEP analytics:', error);
-  }
-};
 
-// Function to round to quarter
-function roundToQuarter(num: number) {
-  return Math.round(num * 4) / 4;
-}
 
-// Function to calculate response time
-function calculateResponseTime(responseStart: number) {
-  return Date.now() - responseStart;
-}
 
-// Function to send Target response analytics
-function sendTargetResponseAnalytics(failure: boolean, responseStart: number, timeoutLocal: number, message: string) {
-  logger.log('Phase 6: Sending Target response analytics:', { failure, timeoutLocal, message });
-  
-  const responseTime = calculateResponseTime(responseStart);
-  const roundedResponseTime = roundToQuarter(responseTime);
-  
-  logger.log('Phase 6: Target response time:', roundedResponseTime);
-  
-  // Server-side: simplified analytics logging
-  // In a real implementation, this would send to analytics service
-}
-
-// Function to handle Alloy response
-const handleAlloyResponse = (response: any) => {
-  logger.log('Phase 6: Handling Alloy response');
-  
-  const propositions = (response.propositions || response.decisions) || [];
-  logger.log('Phase 6: Alloy propositions count:', propositions.length);
-  
-  return propositions;
-};
-
-// Function to update manifests and propositions
-async function updateManifestsAndPropositions({ config, targetAjoManifests, targetAjoPropositions }: any) {
-  logger.log('Phase 6: Updating manifests and propositions');
-  
-  if (!config.mep) config.mep = {};
-  config.mep.targetAjoManifests = targetAjoManifests || [];
-  config.mep.targetAjoPropositions = targetAjoPropositions || [];
-  
-  logger.log('Phase 6: Updated config with Target/AJO data');
-  return config;
-}
-
-// Enhanced categorizeActions function with advanced features
-export async function categorizeActionsAdvanced(experiment: any, config: any) {
-  logger.log('Phase 6: Categorizing actions with advanced features');
-  
-  const fragments: any[] = [];
-  const commands: any[] = [];
-  const globalCommands: any = {};
-
-  // Process experiment data
-  if (experiment.fragments) {
-    experiment.fragments.forEach((frag: any) => {
-      fragments.push(normalizeFragPaths(frag));
-    });
-  }
-
-  if (experiment.commands) {
-    experiment.commands.forEach((cmd: any) => {
-      commands.push(cmd);
-    });
-  }
-
-  // Process global commands
-  GLOBAL_CMDS.forEach(cmdType => {
-    if (experiment[cmdType]) {
-      globalCommands[cmdType] = experiment[cmdType];
-    }
-  });
-
-  // Apply placeholders if available
-  if (experiment.placeholderData) {
-    config = parsePlaceholders(experiment.placeholderData, config, experiment.selectedVariantName);
-  }
-
-  // Apply entitlements if available
-  if (experiment.entitlements) {
-    const entitlements = await getEntitlements(experiment.entitlements);
-    config.entitlements = entitlements;
-  }
-
-  logger.log('Phase 6: Advanced categorized actions:', { 
-    fragments: fragments.length, 
-    commands: commands.length, 
-    globalCommands,
-    placeholders: !!config.placeholders,
-    entitlements: config.entitlements?.length || 0
-  });
-
-  return {
-    fragments,
-    commands,
-    globalCommands,
-    config,
-  };
-}
-
-// Phase 7: Promo Manifest Support
-// Additional promo manifest functionality migrated from promo-utils.js
-
-// Region definitions
-const APAC = ['au', 'cn', 'hk_en', 'hk_zh', 'id_en', 'id_id', 'in', 'in_hi', 'kr', 'my_en', 'my_ms', 'nz', 'ph_en', 'ph_fil', 'sg', 'th_en', 'th_th', 'tw', 'vn_en', 'vn_vi'];
-const EMEA = ['ae_en', 'ae_ar', 'africa', 'at', 'be_en', 'be_fr', 'be_nl', 'bg', 'ch_de', 'ch_fr', 'ch_it', 'cis_en', 'cis_ru', 'cz', 'de', 'dk', 'ee', 'eg_ar', 'eg_en', 'es', 'fi', 'fr', 'gr_el', 'gr_en', 'hu', 'ie', 'il_en', 'il_he', 'iq', 'is', 'it', 'kw_ar', 'kw_en', 'lt', 'lu_de', 'lu_en', 'lu_fr', 'lv', 'mena_ar', 'mena_en', 'ng', 'nl', 'no', 'pl', 'pt', 'qa_ar', 'qa_en', 'ro', 'ru', 'sa_en', 'sa_ar', 'se', 'si', 'sk', 'tr', 'ua', 'uk', 'za'];
-const AMERICAS = ['us', 'ar', 'br', 'ca', 'ca_fr', 'cl', 'co', 'cr', 'ec', 'gt', 'la', 'mx', 'pe', 'pr'];
-const JP = ['jp'];
-const REGIONS = { APAC, EMEA, AMERICAS, JP };
-
-// Function to get metadata from request headers or HTML body
-function getMetadata(key: string, request?: any): string | null {
-  logger.log('Phase 7: Getting metadata for key:', key);
-  
-  // First try to get from request headers
-  if (request?.getHeaders) {
-    const headers = request.getHeaders();
-    const headerValue = headers[key] || headers[key.toLowerCase()];
-    if (headerValue && Array.isArray(headerValue) && headerValue.length > 0) {
-      logger.log('Phase 7: Found metadata in headers:', headerValue[0]);
-      return headerValue[0];
-    }
-  }
-  
-  // Try to extract from HTML body if available (for server-side)
-  if (request?.body) {
-    try {
-      // Ensure body is a string
-      const htmlBody = typeof request.body === 'string' ? request.body : '';
-      if (htmlBody) {
-        const metaRegex = new RegExp(`<meta[^>]*name=["']${key}["'][^>]*content=["']([^"']*)["'][^>]*>`, 'i');
-        const match = htmlBody.match(metaRegex);
-        if (match) {
-          logger.log('Phase 7: Found metadata in HTML:', match[1]);
-          return match[1];
-        }
-      }
-    } catch (error) {
-      logger.log('Phase 7: Error extracting metadata from HTML:', error);
-    }
-  }
-  
-  // Fallback to hardcoded metadata for demo purposes
-  const metadataMap: Record<string, string> = {
-    'schedule': 'cclo | 2025-05-07T14:00:00 | 2025-05-15T14:00:00 | https://main--cc--adobecom.hlx.page/cc-shared/fragments/promos/2025/global/cclo/cclo.json | africa, max25-pre-sonic | 2025-08-06T16:00:00 | 2025-10-28T14:59:59 | https://main--cc--adobecom.aem.page/cc-shared/fragments/promos/2025/global/max-blades-2025/sonic/max-pre.json | za; us; ar; br; ca; ca_fr; cl; co; cr; ec; gt; la; mx; pe; pr',
-    'americas_schedule': 'cci-all-apps-q3 | 2025-08-04T15:00:00 | 2025-08-18T15:00:00 | https://main--cc--adobecom.aem.page/cc-shared/fragments/promos/2025/americas/cci-all-apps-q3/cci-all-apps-q3.json | us; ca; ca_fr, cct-back-to-work-q3 | 2025-08-04T15:00:00 | 2025-08-18T15:00:00 | https://main--cc--adobecom.aem.page/cc-shared/fragments/promos/2025/americas/cct-back-to-work-q3/cct-back-to-work-q3.json | us',
-    'emea_schedule': 'max25-pre-sonic | 2025-08-06T16:00:00 | 2025-10-28T14:59:59 | https://main--cc--adobecom.aem.page/cc-shared/fragments/promos/2025/global/max-blades-2025/sonic/max-pre.json | za; us; ar; br; ca; ca_fr; cl; co; cr; ec; gt; la; mx; pe; pr',
-    'apac_schedule': 'max25-pre-pegasus | 2025-08-06T16:00:00 | 2025-10-28T14:59:59 | https://main--cc--adobecom.aem.page/cc-shared/fragments/promos/2025/global/max-blades-2025/pegasus/max-pre.json | au; hk_en; hk_zh; id_en; id_id; in; in_hi; kr; my_en; my_ms; nz; ph_en; ph_fil; sg; th_en; th_th; tw; vn_en; vn_vi',
-    'jp_schedule': 'max25-pre-loki | 2025-08-06T16:00:00 | 2025-10-28T14:59:59 | https://main--cc--adobecom.aem.page/cc-shared/fragments/promos/2025/global/max-blades-2025/loki/max-pre.json | jp',
-    'manifestnames': 'cclo,max25-pre-sonic,max25-during-sonic,max25-post-sonic',
-    'americas_manifestnames': 'cci-all-apps-q3,cct-back-to-work-q3,ste-back-to-school-q3',
-    'emea_manifestnames': 'max25-pre-sonic,max25-during-sonic,max25-post-sonic',
-    'apac_manifestnames': 'max25-pre-pegasus,max25-during-pegasus,max25-post-pegasus',
-    'jp_manifestnames': 'max25-pre-loki,max25-during-loki,max25-post-loki',
-  };
-  
-  const fallbackValue = metadataMap[key];
-  if (fallbackValue) {
-    logger.log('Phase 7: Using fallback metadata for key:', key);
-    return fallbackValue;
-  }
-  
-  logger.log('Phase 7: No metadata found for key:', key);
-  return null;
-}
-
-// GMT string to local date conversion
-const GMTStringToLocalDate = (gmtString: string) => {
-  try {
-    // Handle different date formats
-    if (gmtString.includes('T')) {
-      // Parse as ISO string with timezone
-      return new Date(gmtString);
-    } else {
-      return new Date(gmtString);
-    }
-  } catch (error) {
-    logger.log('Phase 7: Error parsing date:', gmtString, error);
-    return new Date(); // Return current date as fallback
-  }
-};
-
-// Region code detection
-function getRegionCode(localeCode: string): string | null {
-  logger.log('Phase 7: Getting region code for locale:', localeCode);
-  
-  if (!localeCode) {
-    logger.log('Phase 7: No locale code provided');
-    return null;
-  }
-  
-  // Normalize locale code
-  const normalizedLocale = localeCode.toLowerCase();
-  
-  // Check for Americas region
-  if (normalizedLocale.startsWith('en-us') || 
-      normalizedLocale.startsWith('en-ca') || 
-      normalizedLocale.startsWith('es-') ||
-      normalizedLocale.startsWith('pt-') ||
-      normalizedLocale.includes('us') ||
-      normalizedLocale.includes('ca')) {
-    logger.log('Phase 7: Detected Americas region');
-    return 'americas';
-  }
-  
-  // Check for EMEA region
-  if (normalizedLocale.startsWith('en-gb') || 
-      normalizedLocale.startsWith('en-ie') || 
-      normalizedLocale.startsWith('de-') ||
-      normalizedLocale.startsWith('fr-') ||
-      normalizedLocale.startsWith('es-es') ||
-      normalizedLocale.startsWith('it-') ||
-      normalizedLocale.startsWith('nl-') ||
-      normalizedLocale.startsWith('sv-') ||
-      normalizedLocale.startsWith('no-') ||
-      normalizedLocale.startsWith('da-') ||
-      normalizedLocale.startsWith('fi-') ||
-      normalizedLocale.startsWith('pl-') ||
-      normalizedLocale.startsWith('cs-') ||
-      normalizedLocale.startsWith('hu-') ||
-      normalizedLocale.startsWith('ro-') ||
-      normalizedLocale.startsWith('bg-') ||
-      normalizedLocale.startsWith('hr-') ||
-      normalizedLocale.startsWith('sk-') ||
-      normalizedLocale.startsWith('sl-') ||
-      normalizedLocale.startsWith('et-') ||
-      normalizedLocale.startsWith('lv-') ||
-      normalizedLocale.startsWith('lt-') ||
-      normalizedLocale.startsWith('mt-') ||
-      normalizedLocale.startsWith('el-') ||
-      normalizedLocale.startsWith('tr-') ||
-      normalizedLocale.startsWith('ru-') ||
-      normalizedLocale.startsWith('uk-') ||
-      normalizedLocale.startsWith('ar-') ||
-      normalizedLocale.startsWith('he-') ||
-      normalizedLocale.startsWith('af-') ||
-      normalizedLocale.startsWith('zu-')) {
-    logger.log('Phase 7: Detected EMEA region');
-    return 'emea';
-  }
-  
-  // Check for APAC region
-  if (normalizedLocale.startsWith('en-au') || 
-      normalizedLocale.startsWith('en-nz') || 
-      normalizedLocale.startsWith('en-in') ||
-      normalizedLocale.startsWith('en-sg') ||
-      normalizedLocale.startsWith('en-hk') ||
-      normalizedLocale.startsWith('en-tw') ||
-      normalizedLocale.startsWith('en-kr') ||
-      normalizedLocale.startsWith('en-th') ||
-      normalizedLocale.startsWith('en-my') ||
-      normalizedLocale.startsWith('en-ph') ||
-      normalizedLocale.startsWith('en-vn') ||
-      normalizedLocale.startsWith('en-id') ||
-      normalizedLocale.startsWith('zh-') ||
-      normalizedLocale.startsWith('ja-') ||
-      normalizedLocale.startsWith('ko-') ||
-      normalizedLocale.startsWith('th-') ||
-      normalizedLocale.startsWith('vi-') ||
-      normalizedLocale.startsWith('id-') ||
-      normalizedLocale.startsWith('ms-') ||
-      normalizedLocale.startsWith('fil-') ||
-      normalizedLocale.startsWith('hi-')) {
-    logger.log('Phase 7: Detected APAC region');
-    return 'apac';
-  }
-  
-  // Check for JP region
-  if (normalizedLocale.startsWith('ja-') || 
-      normalizedLocale.includes('jp')) {
-    logger.log('Phase 7: Detected JP region');
-    return 'jp';
-  }
-  
-  logger.log('Phase 7: No specific region detected, using global');
-  return null;
-}
-
-// Manifest disability check
-export const isDisabled = (event: any, searchParams: any, localeCode: string) => {
-  logger.log('Phase 7: Checking if manifest is disabled:', { event, localeCode });
-  
-  if (!event) {
-    logger.log('Phase 7: No event, not disabled');
-    return false;
-  }
-  
-  if (event.locales && !event.locales.includes(localeCode)) {
-    logger.log('Phase 7: Locale not in event locales, disabled');
-    return true;
-  }
-  
-  const currentDate = searchParams?.get('instant') ? new Date(searchParams.get('instant')) : new Date();
-  logger.log('Phase 7: Current date for comparison:', currentDate);
-  
-  if ((!event.start && event.end) || (!event.end && event.start)) {
-    logger.log('Phase 7: Incomplete date range, disabled');
-    return true;
-  }
-  
-  const disabled = Boolean(event.start && event.end && (currentDate < event.start || currentDate > event.end));
-  logger.log('Phase 7: Disabled result:', disabled, {
-    currentDate: currentDate.toISOString(),
-    startDate: event.start?.toISOString(),
-    endDate: event.end?.toISOString()
-  });
-  
-  return disabled;
-};
-
-// Locale checking
-const isManifestWithinLocale = (locales: string, localeCode: string) => {
-  if (!locales) return true;
-  
-  const localeList = locales.split(/[;,]/).map((locale) => locale.trim());
-  const result = localeList.includes(localeCode);
-  
-  logger.log('Phase 7: Locale check:', { locales, localeCode, localeList, result });
-  return result;
-};
-
-// Regional promo manifest processing
-const getRegionalPromoManifests = (manifestNames: string, region: string | null, searchParams: any, localeCode: string, request?: any) => {
-  logger.log('Phase 7: Getting regional promo manifests:', { manifestNames, region, localeCode });
-  
-  if (!manifestNames) {
-    logger.log('Phase 7: No manifest names provided');
-    return [];
-  }
-  
-  const attachedManifests = manifestNames.split(',').map((manifest: string) => manifest.trim());
-  logger.log('Phase 7: Attached manifests:', attachedManifests);
-
-  const scheduleKey = region ? `${region}_schedule` : 'schedule';
-  const schedule = getMetadata(scheduleKey, request);
-  
-  if (!schedule) {
-    logger.log('Phase 7: No schedule found for key:', scheduleKey);
-    return [];
-  }
-  
-  logger.log('Phase 7: Processing schedule:', schedule);
-  
-  const manifests = schedule.split(',').map((manifest: string) => {
-    const parts = manifest.trim().split('|').map((s) => s.trim());
-    logger.log('Phase 7: Processing manifest parts:', parts);
-    
-    if (parts.length < 4) {
-      logger.log('Phase 7: Invalid manifest format, skipping:', manifest);
-      return null;
-    }
-    
-    const [name, start, end, manifestPath, locales, cdtStart, cdtEnd] = parts;
-    
-    logger.log('Phase 7: Checking manifest:', { name, attachedManifests, locales, localeCode });
-    
-    if (attachedManifests.includes(name) && isManifestWithinLocale(locales || '', localeCode)) {
-      const event = {
-        name,
-        start: GMTStringToLocalDate(start),
-        end: GMTStringToLocalDate(end),
-        cdtStart,
-        cdtEnd,
-        locales,
-      };
-      
-      const disabled = isDisabled(event, searchParams, localeCode);
-      
-      logger.log('Phase 7: Manifest event processed:', { name, disabled, event });
-      
-      return { 
-        manifestPath, 
-        disabled, 
-        event, 
-        source: ['promo'],
-        name,
-        start,
-        end,
-        locales
-      };
-    } else {
-      logger.log('Phase 7: Manifest not attached or locale mismatch:', { name, attachedManifests, locales, localeCode });
-      return null;
-    }
-  }).filter((manifest) => manifest !== null);
-  
-  logger.log('Phase 7: Regional manifests result:', manifests.length);
-  return manifests;
-};
-
-// Promo manifest getter
-export function getPromoManifests(manifestNames: any, searchParams: any, localeCode: string, request?: any) {
-  logger.log('Phase 7: Getting promo manifests:', { manifestNames, localeCode });
-  
-  if (!manifestNames) {
-    logger.log('Phase 7: No manifest names provided');
-    return [];
-  }
-  
-  // Handle different input types for manifestNames
-  let manifestConfig: any = {};
-  
-  if (typeof manifestNames === 'string') {
-    // If it's a string, treat it as global manifest names
-    manifestConfig.manifestnames = manifestNames;
-  } else if (typeof manifestNames === 'object') {
-    // If it's an object, use it directly
-    manifestConfig = manifestNames;
-  } else {
-    logger.log('Phase 7: Invalid manifest names type:', typeof manifestNames);
-    return [];
-  }
-  
-  const regionCode = getRegionCode(localeCode);
-  logger.log('Phase 7: Region code:', regionCode);
-  
-  const promoManifests = regionCode ? getRegionalPromoManifests(
-    manifestConfig[`${regionCode}_manifestnames`] || getMetadata(`${regionCode}_manifestnames`, request),
-    regionCode,
-    searchParams,
-    localeCode,
-    request
-  ) : [];
-  
-  const globalPromoManifests = getRegionalPromoManifests(
-    manifestConfig.manifestnames || getMetadata('manifestnames', request),
-    null,
-    searchParams,
-    localeCode,
-    request
-  );
-  
-  const allManifests = [...promoManifests, ...globalPromoManifests];
-  logger.log('Phase 7: All promo manifests:', allManifests.length);
-  
-  return allManifests;
-}
-
-// Manual URLSearchParams implementation for Akamai EdgeWorkers
-class EdgeWorkerURLSearchParams {
-  private params: Record<string, string> = {};
-
-  constructor(queryString?: string) {
-    if (queryString) {
-      this.parseQueryString(queryString);
-    }
-  }
-
-  private parseQueryString(queryString: string): void {
-    if (!queryString) return;
-    
-    const pairs = queryString.split('&');
-    pairs.forEach(pair => {
-      const [key, value] = pair.split('=');
-      if (key) {
-        this.params[decodeURIComponent(key)] = value ? decodeURIComponent(value) : '';
-      }
-    });
-  }
-
-  get(name: string): string | null {
-    return this.params[name] || null;
-  }
-
-  has(name: string): boolean {
-    return name in this.params;
-  }
-
-  set(name: string, value: string): void {
-    this.params[name] = value;
-  }
-
-  delete(name: string): void {
-    delete this.params[name];
-  }
-
-  toString(): string {
-    return Object.entries(this.params)
-      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-      .join('&');
-  }
-}
-
-// Function to create URLSearchParams-like object for Akamai EdgeWorkers
-function createSearchParams(queryString?: string): EdgeWorkerURLSearchParams {
-  return new EdgeWorkerURLSearchParams(queryString);
-}

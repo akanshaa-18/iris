@@ -3,6 +3,96 @@ import { createResponse } from "create-response";
 import { httpRequest } from "http-request";
 import { logger } from "log";
 
+// Function to extract metadata from HTML content
+export function extractMetadataFromHTML(htmlContent: string, key: string): string | null {
+  // Create a regex to find meta tags with the given name
+  const metaRegex = new RegExp(`<meta\\s+name=["']${key}["']\\s+content=["']([^"']*)["']`, 'i');
+  const match = htmlContent.match(metaRegex);
+  return match ? match[1] : null;
+}
+
+// Function to extract all metadata from HTML content
+export function extractAllMetadataFromHTML(htmlContent: string): Record<string, string> {
+  const metadata: Record<string, string> = {};
+  
+  // Find all meta tags with name attribute
+  const metaRegex = /<meta\s+name=["']([^"']*)["']\s+content=["']([^"']*)["']/gi;
+  let match;
+  
+  while ((match = metaRegex.exec(htmlContent)) !== null) {
+    const [, name, content] = match;
+    metadata[name] = content;
+  }
+  
+  return metadata;
+}
+
+// Function to get MEP value (converts string values to appropriate types)
+function getMepValue(val: string | null): any {
+  if (!val) return false;
+  
+  const valMap: Record<string, any> = { 
+    on: true, 
+    off: false, 
+    postLCP: 'postlcp' 
+  };
+  const finalVal = val.toLowerCase().trim();
+  if (finalVal in valMap) return valMap[finalVal];
+  return finalVal;
+}
+
+// Function to get MEP enablement from HTML content
+export function getMepEnablementFromHTML(htmlContent: string, mdKey: string, paramKey: string | false = false, queryString: string = ''): any {
+  // Get query parameters
+  let paramValue = null;
+  
+  if (queryString) {
+    const params = new Map();
+    queryString.split('&').forEach(pair => {
+      const [key, value] = pair.split('=');
+      if (key && value) {
+        params.set(key, decodeURIComponent(value));
+      }
+    });
+    paramValue = params.get(paramKey || mdKey);
+  }
+  
+  if (paramValue) return getMepValue(paramValue);
+  
+  // Get from HTML metadata
+  const metadataValue = extractMetadataFromHTML(htmlContent, mdKey);
+  if (metadataValue) {
+    return getMepValue(metadataValue);
+  }
+  
+  return false;
+}
+
+// Function to get promo MEP enablement from HTML content
+export function getPromoMepEnablementFromHTML(htmlContent: string): any {
+  const mds = [
+    'apac_manifestnames',
+    'emea_manifestnames',
+    'americas_manifestnames',
+    'jp_manifestnames',
+    'manifestnames',
+  ];
+  
+  const mdObject: Record<string, any> = {};
+  
+  mds.forEach((key) => {
+    const val = extractMetadataFromHTML(htmlContent, key);
+    if (val) {
+      mdObject[key] = getMepValue(val);
+    }
+  });
+  
+  if (Object.keys(mdObject).length > 0) {
+    return mdObject;
+  }
+  return false;
+}
+
 const COMMANDS_KEYS = {
   remove: 'remove',
   replace: 'replace',
