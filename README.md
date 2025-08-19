@@ -33,7 +33,7 @@ The project consists of several modules:
    - Configure your Akamai EdgeWorkers environment with the necessary variables
 
 3. **Build the Project**:
-```bash
+   ```bash
    npm run bundle
    ```
 
