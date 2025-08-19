@@ -82,7 +82,10 @@ function getMetadata(key: string, request: any): string | null {
     return result;
   }
   
-  logger.log('Phase 5: Debug - getMetadata - not found');
+  // TODO: This is the main issue - metadata is in HTML content, not headers
+  // We need to extract metadata from HTML during the rewriting phase
+  // For now, return null and handle this during HTML rewriting
+  logger.log('Phase 5: Debug - getMetadata - not found (metadata should be in HTML)');
   return null;
 }
 
@@ -167,6 +170,38 @@ export function parseManifestNames(request: any): any {
   }
   
   logger.log('Phase 5: Debug - parseManifestNames - final manifestNames:', manifestNames);
+  return manifestNames;
+}
+
+// Function to parse manifest names from HTML metadata
+export function parseManifestNamesFromMetadata(metadata?: Record<string, string>): any {
+  const manifestNames: any = {};
+  
+  if (!metadata) {
+    logger.log('Phase 5: Debug - parseManifestNamesFromMetadata - no metadata provided');
+    return manifestNames;
+  }
+  
+  logger.log('Phase 5: Debug - parseManifestNamesFromMetadata - metadata keys:', Object.keys(metadata));
+  
+  // Get global manifest names
+  const globalManifestNames = metadata['manifestnames'];
+  logger.log('Phase 5: Debug - parseManifestNamesFromMetadata - globalManifestNames:', globalManifestNames);
+  if (globalManifestNames) {
+    manifestNames.manifestnames = globalManifestNames;
+  }
+  
+  // Get regional manifest names
+  const regions = ['apac', 'emea', 'americas', 'jp'];
+  regions.forEach(region => {
+    const regionalManifestNames = metadata[`${region}_manifestnames`];
+    if (regionalManifestNames) {
+      manifestNames[`${region}_manifestnames`] = regionalManifestNames;
+      logger.log(`Phase 5: Debug - parseManifestNamesFromMetadata - ${region}_manifestnames:`, regionalManifestNames);
+    }
+  });
+  
+  logger.log('Phase 5: Debug - parseManifestNamesFromMetadata - final manifestNames:', manifestNames);
   return manifestNames;
 }
 

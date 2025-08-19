@@ -246,20 +246,42 @@ export type ProcessedData = { [key: string]: unknown };
 
 export async function getPersonalizationData(request, authState) {
   const startTime = Date.now();
-  ////logger.log("Making Interact Call");
+  logger.log("🎯 Starting Target personalization data fetch");
   
   try {
     const rawData = await fetchPersonalizationData(request, authState);
+    logger.log("🎯 Raw Target data received:", {
+      hasData: !!rawData,
+      dataKeys: rawData ? Object.keys(rawData) : [],
+      hasHandle: rawData?.handle ? rawData.handle.length : 0
+    });
+    
     const parsedData = parseRawData(rawData);
     
     const endTime = Date.now();
-    // logger.log(`Personalization data processing completed in ${endTime - startTime}ms`);
-    // logger.log(`Found ${parsedData.fragments?.length || 0} fragments and ${parsedData.commands?.length || 0} commands`);
+    logger.log(`🎯 Target personalization data processing completed in ${endTime - startTime}ms`);
+    logger.log(`🎯 Found ${parsedData.fragments?.length || 0} fragments and ${parsedData.commands?.length || 0} commands`);
+    
+    if (parsedData.fragments?.length > 0) {
+      logger.log("🎯 Target fragments:", parsedData.fragments.map(f => ({
+        selector: f.selector,
+        val: f.val,
+        action: f.action
+      })));
+    }
+    
+    if (parsedData.commands?.length > 0) {
+      logger.log("🎯 Target commands:", parsedData.commands.map(c => ({
+        selector: c.selector,
+        action: c.action,
+        content: c.content?.substring(0, 100) + '...'
+      })));
+    }
     
     return parsedData;
   } catch (error) {
     const endTime = Date.now();
-    logger.log(`Personalization data processing failed after ${endTime - startTime}ms: ${error}`);
+    logger.log(`🎯 Target personalization data processing failed after ${endTime - startTime}ms: ${error}`);
     throw error;
   }
 }
@@ -389,21 +411,36 @@ async function fetchPersonalizationData(request, authState) {
   });
 
   // Log the response for debugging
-  // logger.log("=== ADOBE TARGET RESPONSE ===");
-  // logger.log("Status:", targetResp.status);
-  // logger.log("Status Text:", targetResp.statusText);
-  // logger.log("Headers:", JSON.stringify(targetResp.getHeaders(), null, 2));
+  logger.log("=== ADOBE TARGET RESPONSE ===");
+  logger.log("Status:", targetResp.status);
+  logger.log("Status Text:", targetResp.statusText);
+  logger.log("Headers:", JSON.stringify(targetResp.getHeaders(), null, 2));
 
-  // if (targetResp.status !== 200) {
-  //   logger.error("Target API Error Status:", targetResp.status);
-  //   const errorText = await targetResp.text();
-  //   logger.error("Error Response Body:", errorText);
-  //   throw new Error(`Failed to fetch interact call: ${targetResp.status} - ${errorText}`);
-  // }
+  if (targetResp.status !== 200 && targetResp.status !== 207) {
+    logger.error("Target API Error Status:", targetResp.status);
+    const errorText = await targetResp.text();
+    logger.error("Error Response Body:", errorText);
+    throw new Error(`Failed to fetch interact call: ${targetResp.status} - ${errorText}`);
+  }
 
   const responseData = await targetResp.json();
-  // logger.log("Response Data:", JSON.stringify(responseData, null, 2));
-  ////logger.log("=== END RESPONSE ===");
+  
+  // Check if Target response contains "application/json" string
+  const responseString = JSON.stringify(responseData);
+  if (responseString.includes("application/json")) {
+    logger.log("🎯 TARGET RESPONSE CONTAINS 'application/json' STRING!");
+    logger.log("Target response preview:", responseString.substring(0, 4000) + "...");
+  } else {
+    logger.log("Target response does not contain 'application/json' string");
+  }
+  
+  logger.log("Target response data keys:", Object.keys(responseData));
+  if (responseData.handle && responseData.handle.length > 0) {
+    logger.log("Target handle count:", responseData.handle.length);
+    logger.log("Target handle types:", responseData.handle.map(h => h.type));
+  }
+  
+  logger.log("=== END TARGET RESPONSE ===");
 
   return responseData;
 }
@@ -611,27 +648,55 @@ function generateUUIDv4() {
 }
 
 export function parseRawData(targetData) {
+  logger.log("🎯 parseRawData: Starting to parse Target data");
+  logger.log("🎯 parseRawData: Target data keys:", targetData ? Object.keys(targetData) : []);
+  
   // Extract personalization decisions
-  const propositions = targetData?.handle?.find(d => d.type === "personalization:decisions")?.payload || [];
+  const personalizationHandle = targetData?.handle?.find(d => d.type === "personalization:decisions");
+  logger.log("🎯 parseRawData: Personalization handle found:", !!personalizationHandle);
+  
+  const propositions = personalizationHandle?.payload || [];
+  logger.log("🎯 parseRawData: Propositions count:", propositions.length);
 
   if (propositions.length === 0) {
+    logger.log("🎯 parseRawData: No propositions found, returning empty data");
     return { fragments: [], commands: [] };
   }
 
-  ////logger.log(`Found ${propositions.length} propositions`);
+  logger.log(`🎯 parseRawData: Found ${propositions.length} propositions`);
 
   // Process propositions to extract fragments and commands
   const fragments = [];
   const commands = [];
 
-  propositions.forEach(proposition => {
-    proposition.items?.forEach(item => {
+  propositions.forEach((proposition, index) => {
+    logger.log(`🎯 parseRawData: Processing proposition ${index + 1}:`, {
+      hasItems: !!proposition.items,
+      itemsCount: proposition.items?.length || 0
+    });
+    
+    proposition.items?.forEach((item, itemIndex) => {
+      logger.log(`🎯 parseRawData: Processing item ${itemIndex + 1}:`, {
+        hasData: !!item.data,
+        format: item.data?.format,
+        hasContent: !!item.data?.content
+      });
+      
       if (item.data?.format === "application/json") {
         const content = item.data.content;
+        logger.log(`🎯 parseRawData: JSON content keys:`, content ? Object.keys(content) : []);
+        
         if (content?.manifestContent) {
           const experiences = content.manifestContent?.experiences?.data || content.manifestContent?.data || [];
-
-          experiences.forEach(experience => {
+          logger.log(`🎯 parseRawData: Experiences count:`, experiences.length);
+          
+          experiences.forEach((experience, expIndex) => {
+            logger.log(`🎯 parseRawData: Processing experience ${expIndex + 1}:`, {
+              action: experience.action,
+              selector: experience.selector,
+              keys: Object.keys(experience)
+            });
+            
             const action = experience.action
               ?.toLowerCase()
               .replace("content", "")
@@ -644,27 +709,38 @@ export function parseRawData(targetData) {
                 key.toLowerCase()
               )
             );
+            
+            logger.log(`🎯 parseRawData: Variant names:`, variantNames);
 
             variantNames.forEach(variant => {
-              if (!experience[variant] || experience[variant].toLowerCase() === "false") return;
+              if (!experience[variant] || experience[variant].toLowerCase() === "false") {
+                logger.log(`🎯 parseRawData: Skipping variant ${variant} (false or empty)`);
+                return;
+              }
+
+              logger.log(`🎯 parseRawData: Processing variant ${variant}:`, experience[variant]);
 
               if (getSelectorType(selector) === "fragment") {
-                fragments.push({
+                const fragment = {
                   selector: normalizePath(selector.split(" #_")[0]),
                   val: normalizePath(experience[variant]),
                   action,
                   manifestId: content.manifestPath,
                   targetManifestId: item.meta?.["activity.name"]
-                });
+                };
+                fragments.push(fragment);
+                logger.log(`🎯 parseRawData: Added fragment:`, fragment);
               } else if (action === "remove" || action === "replace" || action === "updateattribute") {
-                commands.push({
+                const command = {
                   action,
                   selector,
                   content: experience[variant],
                   selectorType: getSelectorType(selector),
                   manifestId: content.manifestPath,
                   targetManifestId: item.meta?.["activity.name"]
-                });
+                };
+                commands.push(command);
+                logger.log(`🎯 parseRawData: Added command:`, command);
               }
             });
           });
@@ -673,6 +749,7 @@ export function parseRawData(targetData) {
     });
   });
 
+  logger.log(`🎯 parseRawData: Final result - fragments: ${fragments.length}, commands: ${commands.length}`);
   return { fragments, commands };
 }
 
@@ -1577,8 +1654,9 @@ export const combineMepSources = async (
   promoEnabled: boolean,
   mepParam: string,
   request: any,
+  metadata?: Record<string, string>,
 ) => {
-  logger.log('Phase 5: Combining MEP sources using getMepEnablement for consistency:', { persEnabled, rocPersEnabled, promoEnabled });
+  logger.log('Phase 5: Combining MEP sources with HTML metadata:', { persEnabled, rocPersEnabled, promoEnabled });
   
   let persManifests: any[] = [];
 
@@ -1592,18 +1670,48 @@ export const combineMepSources = async (
   }
 
   if (promoEnabled) {
-    logger.log('Phase 5: Processing promotional sources using getMepEnablement');
+    logger.log('Phase 5: Processing promotional sources with HTML metadata');
     
-    // Use getMepEnablement to get promo enablement
-    const promoEnablement = getMepEnablement('manifestnames', PROMO_PARAM, request);
-    logger.log('Phase 5: Promo enablement from getMepEnablement:', promoEnablement);
-    
-    if (promoEnablement && typeof promoEnablement === 'object' && Object.keys(promoEnablement).length > 0) {
-      logger.log('Phase 5: Found promo manifests in enablement:', promoEnablement);
-      // TODO: Process promo manifests when we have access to HTML content
-      // For now, we'll log the enablement but skip processing
-    } else {
-      logger.log('Phase 5: No promo manifests found in enablement');
+    try {
+      // Import and use promo utilities
+      const { default: getPromoManifests, parseManifestNamesFromMetadata } = await import('./PromoUtils');
+      
+      // Parse manifest names from HTML metadata
+      const manifestNames = parseManifestNamesFromMetadata(metadata);
+      logger.log('Phase 5: Parsed manifest names from HTML metadata:', manifestNames);
+      
+      // Create searchParams with proper error handling
+      let searchParams;
+      const queryParams = getQueryParams(request.query);
+      if (queryParams && queryParams.searchParams && queryParams.searchParams.get) {
+        searchParams = queryParams.searchParams;
+      } else {
+        // Fallback: manual query parameter parsing
+        const queryString = request.query || '';
+        searchParams = {
+          get: (param: string) => {
+            if (!queryString) return null;
+            const params = new Map();
+            queryString.split('&').forEach(pair => {
+              const [key, value] = pair.split('=');
+              if (key && value) {
+                params.set(key, decodeURIComponent(value));
+              }
+            });
+            return params.get(param);
+          }
+        };
+      }
+      
+      if (Object.keys(manifestNames).length > 0) {
+        const promoManifests = getPromoManifests(manifestNames, searchParams, request);
+        logger.log('Phase 5: Found promo manifests:', promoManifests.length);
+        persManifests = persManifests.concat(promoManifests);
+      } else {
+        logger.log('Phase 5: No manifest names found for promo processing');
+      }
+    } catch (error) {
+      logger.log('Phase 5: Error processing promos:', error);
     }
   }
 
@@ -1635,7 +1743,7 @@ export const combineMepSources = async (
 };
 
 // Main personalization initialization function
-export async function init(enablements: any = {}, request: any, config: any) {
+export async function init(enablements: any = {}, request: any, config: any, htmlContent?: string, metadata?: Record<string, string>) {
   logger.log('Phase 5: Initializing personalization with enablements:', enablements);
   
   let manifests: any[] = [];
@@ -1654,8 +1762,11 @@ export async function init(enablements: any = {}, request: any, config: any) {
     // Parse MEP parameter
     const variantOverride = parseMepParam(mepParam);
     
-    // Combine MEP sources
-    manifests = manifests.concat(await combineMepSources(pzn, pznroc, promo, mepParam, request));
+    // Combine MEP sources with HTML metadata - this handles both Target and Promo manifests
+    const combinedManifests = await combineMepSources(pzn, pznroc, promo, mepParam, request, metadata);
+    manifests = manifests.concat(combinedManifests);
+    
+    logger.log('Phase 5: Combined manifests from all sources:', manifests.length);
     
     // Preload manifest URLs
     manifests?.forEach((manifest) => {
@@ -1677,65 +1788,148 @@ export async function init(enablements: any = {}, request: any, config: any) {
   
   try {
     if (manifests?.length) {
-      logger.log('Phase 5: Applying personalization to manifests');
-      const result = await applyPers({ manifests }, request, config);
-      logger.log('Phase 5: Personalization applied successfully:', result);
-      return result;
+      logger.log('Phase 5: Processing manifests for personalization:', manifests.length);
+      
+      // Process each manifest to get personalization data
+      const personalizationData = {
+        fragments: [],
+        commands: []
+      };
+      
+      for (const manifest of manifests) {
+        try {
+          logger.log('Phase 5: Processing manifest:', manifest.manifestPath);
+          const manifestConfig = await getManifestConfig(manifest, variantOverride);
+          
+          if (manifestConfig?.selectedVariant) {
+            logger.log('Phase 5: Manifest has selected variant:', manifestConfig.selectedVariantName);
+            
+            // Add fragments
+            if (manifestConfig.selectedVariant.fragments) {
+              personalizationData.fragments.push(...manifestConfig.selectedVariant.fragments);
+              logger.log('Phase 5: Added fragments:', manifestConfig.selectedVariant.fragments.length);
+            }
+            
+            // Add commands
+            if (manifestConfig.selectedVariant.commands) {
+              personalizationData.commands.push(...manifestConfig.selectedVariant.commands);
+              logger.log('Phase 5: Added commands:', manifestConfig.selectedVariant.commands.length);
+            }
+          } else {
+            logger.log('Phase 5: Manifest has no selected variant or is default');
+          }
+        } catch (error) {
+          logger.log('Phase 5: Error processing manifest:', error);
+        }
+      }
+      
+      logger.log('Phase 5: Personalization data prepared:', {
+        fragments: personalizationData.fragments.length,
+        commands: personalizationData.commands.length
+      });
+      
+      return personalizationData;
+    } else {
+      logger.log('Phase 5: No manifests to process');
     }
   } catch (e) {
     logger.log(`Phase 5: MEP Error: ${e.toString()}`);
   }
   
-  return null;
+  // Return empty personalization data if no manifests
+  return { fragments: [], commands: [] };
 }
 
 // Enhanced getPersonalizationData function that integrates manifest processing
-export async function getPersonalizationDataWithManifests(request: any, authState: any) {
+export async function getPersonalizationDataWithManifests(request: any, authState: any, htmlContent?: string | null, metadata?: Record<string, string>) {
   logger.log('Phase 5: Getting personalization data with manifest processing');
   
   try {
-    // First, get raw data from Adobe Target
-    const rawData = await fetchPersonalizationData(request, authState);
-    const parsedData = parseRawData(rawData);
+    // If we don't have HTML content, we'll process without metadata for now
+    if (!htmlContent || !metadata) {
+      logger.log('Phase 5: No HTML content provided, processing without metadata');
+      metadata = {};
+    }
     
-    // Extract manifest information from Target response
-    const manifests = extractManifestsFromTargetResponse(rawData);
+    // Extract enablements from metadata
+    const enablements = extractEnablements(request, metadata);
+    logger.log('Phase 5: Extracted enablements:', enablements);
     
-    if (manifests.length > 0) {
-      logger.log('Phase 5: Found manifests in Target response:', manifests.length);
+    let allPersonalizationData = {
+      fragments: [],
+      commands: []
+    };
+    
+    // STEP 1: Process Target/AJO personalization (if enabled)
+    if (enablements.target || enablements.ajo) {
+      logger.log('Phase 5: Processing Target/AJO personalization');
+      const targetPersonalizationData = await getPersonalizationData(request, authState);
       
-      // Extract enablements from request parameters and metadata
-      const enablements = extractEnablements(request);
-      logger.log('Phase 5: Extracted enablements:', enablements);
-      
-      // Create config with proper mep initialization
-      const config = createConfigWithMep(request, enablements);
-      
-      // Initialize personalization with manifests
-      const manifestResult = await init(enablements, request, config);
-      
-      if (manifestResult) {
-        // Merge manifest-based personalization with Target-based personalization
-        const mergedData = mergePersonalizationData(parsedData, manifestResult);
-        logger.log('Phase 5: Merged personalization data:', mergedData);
-        return mergedData;
+      if (targetPersonalizationData.fragments?.length || targetPersonalizationData.commands?.length) {
+        logger.log('Phase 5: Target personalization data found:', {
+          fragments: targetPersonalizationData.fragments?.length || 0,
+          commands: targetPersonalizationData.commands?.length || 0
+        });
+        
+        // Extract manifests from Target response
+        const targetManifests = extractManifestsFromTargetResponse(targetPersonalizationData);
+        logger.log('Phase 5: Extracted Target manifests:', targetManifests.length);
+        
+        if (targetManifests.length > 0) {
+          // Process Target manifests
+          const targetEnhancedData = await init(request, targetManifests, metadata);
+          if (targetEnhancedData) {
+            allPersonalizationData = mergePersonalizationData(allPersonalizationData, targetEnhancedData);
+          }
+        }
+        
+        // Merge Target data
+        allPersonalizationData = mergePersonalizationData(allPersonalizationData, targetPersonalizationData);
       }
     }
     
-    // Fallback to original Target-based personalization
-    logger.log('Phase 5: Using Target-based personalization only');
-    return parsedData;
+    // STEP 2: Process Promo personalization (independent of Target)
+    if (enablements.promo || enablements.pzn || enablements.pznroc) {
+      logger.log('Phase 5: Processing Promo personalization');
+      
+      // Create enablements object for promo processing
+      const promoEnablements = {
+        pzn: enablements.pzn,
+        pznroc: enablements.pznroc,
+        promo: enablements.promo,
+        mepParam: enablements.mepParam
+      };
+      
+      // Process promo manifests directly (no Target API dependency)
+      const promoData = await init(promoEnablements, request, null, htmlContent, metadata);
+      if (promoData && (promoData.fragments?.length || promoData.commands?.length)) {
+        logger.log('Phase 5: Promo personalization data found:', {
+          fragments: promoData.fragments?.length || 0,
+          commands: promoData.commands?.length || 0
+        });
+        
+        // Merge promo data
+        allPersonalizationData = mergePersonalizationData(allPersonalizationData, promoData);
+      }
+    }
+    
+    logger.log('Phase 5: Final personalization data:', {
+      fragments: allPersonalizationData.fragments?.length || 0,
+      commands: allPersonalizationData.commands?.length || 0
+    });
+    
+    return allPersonalizationData;
     
   } catch (error) {
-    logger.log('Phase 5: Error in manifest-enhanced personalization:', error);
-    // Fallback to basic personalization
-    return await getPersonalizationData(request, authState);
+    logger.log('Phase 5: Error in getPersonalizationDataWithManifests:', error);
+    return { fragments: [], commands: [] };
   }
 }
 
-// Function to extract enablements from request using getMepEnablement for consistency
-function extractEnablements(request: any) {
-  logger.log('Phase 5: Extracting enablements using getMepEnablement for consistency');
+// Function to extract enablements from request using HTML metadata
+function extractEnablements(request: any, metadata?: Record<string, string>) {
+  logger.log('Phase 5: Extracting enablements using HTML metadata');
+  logger.log('Phase 5: Raw metadata received:', metadata);
   
   // Extract from URL parameters with proper error handling
   let mepParam = null;
@@ -1767,16 +1961,29 @@ function extractEnablements(request: any) {
     }
   }
   
-  // Extract from metadata using getMepEnablement for consistency
-  const pzn = getMepEnablement('personalization', false, request);
-  const pznroc = getMepEnablement('personalization-roc', false, request);
-  const promo = getMepEnablement('manifestnames', PROMO_PARAM, request);
-  const target = martech === 'off' ? false : getMepEnablement('target', false, request);
-  const ajo = martech === 'off' ? false : getMepEnablement('ajo', false, request);
-  const mepgeolocation = getMepEnablement('mepgeolocation', false, request);
-  const enablePersV2 = getMepEnablement('personalization-v2', false, request);
+  // Extract from HTML metadata if available
+  const pzn = metadata ? getMepValue(metadata['personalization']) : false;
+  const pznroc = metadata ? getMepValue(metadata['personalization-roc']) : false;
+  const promo = metadata ? getMepValue(metadata['manifestnames']) : false;
+  const target = martech === 'off' ? false : (metadata ? getMepValue(metadata['target']) : false);
+  const ajo = martech === 'off' ? false : (metadata ? getMepValue(metadata['ajo']) : false);
+  const mepgeolocation = metadata ? getMepValue(metadata['mepgeolocation']) : false;
+  const enablePersV2 = metadata ? getMepValue(metadata['personalization-v2']) : false;
   
-  logger.log('Phase 5: Extracted enablements using getMepEnablement:', {
+  logger.log('Phase 5: Individual enablement values:', {
+    'metadata[personalization]': metadata?.['personalization'],
+    'metadata[manifestnames]': metadata?.['manifestnames'],
+    'metadata[target]': metadata?.['target'],
+    'metadata[ajo]': metadata?.['ajo'],
+    'metadata[personalization-v2]': metadata?.['personalization-v2'],
+    'pzn (processed)': pzn,
+    'promo (processed)': promo,
+    'target (processed)': target,
+    'ajo (processed)': ajo,
+    'enablePersV2 (processed)': enablePersV2
+  });
+  
+  logger.log('Phase 5: Final extracted enablements:', {
     mepParam,
     mepHighlight,
     mepButton,
@@ -1787,7 +1994,8 @@ function extractEnablements(request: any) {
     target,
     ajo,
     mepgeolocation,
-    enablePersV2
+    enablePersV2,
+    metadataKeys: metadata ? Object.keys(metadata) : []
   });
   
   return {

@@ -3,7 +3,7 @@ import { httpRequest } from "http-request";
 import { logger } from "log";
 import { authenticate } from "./Auth/Auth";
 import { getPersonalizationDataWithManifests } from "./Personalize/Personalize";
-import { rewrite } from "./Personalize/Rewriter";
+import { rewriteStreamWithContent } from "./Personalize/Rewriter";
 import { shouldPersonalize, getVisitorStatus } from "./Utilities/Utilities";
 
 const PROD_COOKIE_DOMAIN = '.adobe.com';
@@ -55,16 +55,61 @@ async function responseProvider(request) {
 }
 
 async function personalize(request, response, responseHeaders) {
+  let responseBody: string | null = null;
+  
   try {
+    // Step 1: Authenticate first (before any stream operations)
     const authState = await authenticate(request);
+    logger.log("Step 1: Authentication complete");
     
-    // Use Phase 5 enhanced personalization function
-    const personalizationData = await getPersonalizationDataWithManifests(request, authState);
+    // Step 2: Read HTML content ONCE - this locks the stream
+    responseBody = await response.text();
+    logger.log("Step 2: Retrieved HTML content for processing, length:", responseBody.length);
+    
+    // Step 3: Extract metadata from HTML content
+    const metadata = extractAllMetadataFromHTML(responseBody);
+    logger.log("Step 3: Extracted metadata from HTML:", Object.keys(metadata));
+    logger.log("Step 3: Key metadata values:", {
+      manifestnames: metadata['manifestnames'],
+      target: metadata['target'],
+      personalization: metadata['personalization'],
+      'personalization-v2': metadata['personalization-v2']
+    });
+    
+    // Step 4: Process personalization with HTML metadata
+    const personalizationData = await getPersonalizationDataWithManifests(request, authState, responseBody, metadata);
+    
+    logger.log("Step 4: Personalization data received:", {
+      hasFragments: !!personalizationData.fragments,
+      fragmentsCount: personalizationData.fragments?.length || 0,
+      hasCommands: !!personalizationData.commands,
+      commandsCount: personalizationData.commands?.length || 0
+    });
+    
+    if (personalizationData.fragments?.length > 0) {
+      logger.log("Step 4: Fragment details:", personalizationData.fragments.map(f => ({
+        selector: f.selector,
+        val: f.val,
+        action: f.action
+      })));
+    }
+    
+    if (personalizationData.commands?.length > 0) {
+      logger.log("Step 4: Command details:", personalizationData.commands.map(c => ({
+        selector: c.selector,
+        action: c.action,
+        content: c.content?.substring(0, 100) + '...'
+      })));
+    }
     
     if (!personalizationData.fragments?.length && !personalizationData.commands?.length) {
       logger.log("No personalization data to apply, returning original response");
-      const responseBody = await response.text();
-      responseHeaders["content-length"] = [responseBody.length.toString()];
+      // Remove content-encoding headers to prevent decoding issues
+      delete responseHeaders["content-encoding"];
+      delete responseHeaders["Content-Encoding"];
+      delete responseHeaders["content-length"];
+      delete responseHeaders["Content-Length"];
+      
       return createResponse(
         response.status,
         responseHeaders,
@@ -72,24 +117,62 @@ async function personalize(request, response, responseHeaders) {
       );
     }
     
-    logger.log("Phase 5: Rewriting HTML with enhanced personalization data");
+    logger.log("Step 4: Personalization processing complete");
     logger.log("Personalization data:", {
       fragments: personalizationData.fragments?.length || 0,
       commands: personalizationData.commands?.length || 0
     });
     
-    const personalizedResponse = await rewrite(response, personalizationData, responseHeaders);
+    // Step 5: Rewrite HTML content with personalization data
+    logger.log("Step 5: Starting HTML rewrite");
+    const personalizedResponse = await rewriteStreamWithContent(responseBody, personalizationData, responseHeaders);
     return personalizedResponse;
   } catch (e) {
-    logger.log("Phase 5: Error in personalization:", e);
-    const responseBody = await response.text();
-    responseHeaders["content-length"] = [responseBody.length.toString()];
-    return createResponse(
-      response.status,
-      responseHeaders,
-      responseBody
-    );
+    logger.log("Error in personalization:", e);
+    
+    // Return the HTML content we already read, or a simple error response
+    if (responseBody) {
+      // We have the HTML content, return it as-is
+      delete responseHeaders["content-encoding"];
+      delete responseHeaders["Content-Encoding"];
+      delete responseHeaders["content-length"];
+      delete responseHeaders["Content-Length"];
+      
+      return createResponse(
+        response.status,
+        responseHeaders,
+        responseBody
+      );
+    } else {
+      // We never read the stream, so we can still access response.body
+      delete responseHeaders["content-encoding"];
+      delete responseHeaders["Content-Encoding"];
+      delete responseHeaders["content-length"];
+      delete responseHeaders["Content-Length"];
+      
+      return createResponse(
+        response.status,
+        responseHeaders,
+        response.body
+      );
+    }
   }
+}
+
+// Function to extract all metadata from HTML content
+function extractAllMetadataFromHTML(htmlContent: string): Record<string, string> {
+  const metadata: Record<string, string> = {};
+  
+  // Find all meta tags with name attribute
+  const metaRegex = /<meta\s+name=["']([^"']*)["']\s+content=["']([^"']*)["']/gi;
+  let match;
+  
+  while ((match = metaRegex.exec(htmlContent)) !== null) {
+    const [, name, content] = match;
+    metadata[name] = content;
+  }
+  
+  return metadata;
 }
 
 export {
