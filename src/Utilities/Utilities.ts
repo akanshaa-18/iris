@@ -20,14 +20,13 @@ export const safeHeaders = (headers) => {
 };
 
 export const shouldPersonalize = (request) => {
-  // Parse URL manually since URL constructor might not be available
-  const urlString = request.url;
-  const queryString = urlString.split('?')[1] || '';
+  // Use safe EdgeWorker fields instead of request.url
+  const query = request.query || '';
   
   // Manual URLSearchParams implementation for Akamai EdgeWorkers
   const params = {};
-  if (queryString) {
-    queryString.split('&').forEach(pair => {
+  if (query) {
+    query.split('&').forEach(pair => {
       const [key, value] = pair.split('=');
       if (key) {
         params[decodeURIComponent(key)] = value ? decodeURIComponent(value) : '';
@@ -42,13 +41,24 @@ export const shouldPersonalize = (request) => {
     params["perf_test"] === "true";
 };
 
-export const determineLocale = (request, url) => {
+export const determineLocale = (request, url?) => {
   const acceptLanguage = request.getHeaders()["Accept-Language"] || "";
-  const defaultLocale = { ietf: "en-US", language: "en", country: "US", prefix: "" };
+  const defaultLocale = { ietf: "en-US", language: "en", country: "US", prefix: "", region: "us" };
 
-  // Parse pathname manually from URL string
-  const urlString = typeof url === 'string' ? url : url.href || url.toString();
-  const pathname = urlString.split('?')[0].split('#')[0];
+  // Parse pathname from URL or request
+  let pathname = "";
+  if (url) {
+    if (typeof url === 'string') {
+      pathname = url.split('?')[0].split('#')[0];
+    } else if (url.pathname) {
+      pathname = url.pathname;
+    } else if (url.href) {
+      pathname = url.href.split('?')[0].split('#')[0];
+    }
+  } else if (request.path) {
+    pathname = request.path;
+  }
+  
   const pathParts = pathname.split("/").filter(Boolean);
   
   if (pathParts.length > 0) {
@@ -60,6 +70,7 @@ export const determineLocale = (request, url) => {
         language,
         country: country ? country.toUpperCase() : undefined,
         prefix: `/${language}${country ? `-${country}` : ""}`,
+        region: country ? country.toLowerCase() : language
       };
     }
   }
@@ -73,6 +84,7 @@ export const determineLocale = (request, url) => {
         language,
         country: country.toUpperCase(),
         prefix: `/${language}-${country.toLowerCase()}`,
+        region: country.toLowerCase()
       };
     }
   }

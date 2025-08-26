@@ -3,7 +3,7 @@ import { httpRequest } from "http-request";
 import { logger } from "log";
 import { authenticate } from "./Auth/Auth";
 import { getPersonalizationData } from "./Personalize/Personalize";
-import { rewrite } from "./Personalize/Rewriter";
+import { rewriteWithBufferedHtml } from "./Personalize/Rewriter";
 import { shouldPersonalize, getVisitorStatus } from "./Utilities/Utilities";
 
 const PROD_COOKIE_DOMAIN = 'adobe.com';
@@ -18,11 +18,11 @@ async function responseProvider(request) {
     const subrequestHeaders = request.getHeaders();
     delete subrequestHeaders.host;
     subrequestHeaders["X-EW-Personalization-Page"] = ["true"];
-    //logger.log("Making Subrequest");
+    // logger.log("Making Subrequest");
     const response = await httpRequest(requestUrl, {
       headers: subrequestHeaders
     });
-    //logger.log("Subrequest Received");
+    // logger.log("Subrequest Received");
 
     // Set cache control headers to prevent caching of personalized pages
     const responseHeaders = response.getHeaders();
@@ -35,106 +35,90 @@ async function responseProvider(request) {
     delete responseHeaders["content-encoding"];
     delete responseHeaders["Content-Encoding"];
 
+    // Fetch HTML Response Once, buffer the response
+    // logger.log("Buffering HTML response");
+    const bufferedHtml = await response.text();
+    // logger.log(`HTML buffered successfully (${bufferedHtml.length} characters)`);
+
     // Check if we should personalize this request
     if (shouldPersonalize(request)) {
-      //logger.log("Personalizing page");
-      return await personalize(request, response, responseHeaders);
+      // logger.log("Personalizing page");
+      return await personalize(request, bufferedHtml, responseHeaders, response.status);
     }
 
     // Return original response without personalization
-    //logger.log("Not personalizing page");
-    // logger.log("Returning original response without personalization");
-    // logger.log("Response status:", response.status);
-    // logger.log("Response headers:", JSON.stringify(responseHeaders, null, 2));
-    
-    // Get response body properly for Akamai EdgeWorkers
-    const responseBody = await response.text();
+    logger.log("Not personalizing page");
     
     // Update Content-Length header to match actual body length
-    responseHeaders["content-length"] = [responseBody.length.toString()];
-    
-    // Debug: Check for problematic headers
-    logger.log("=== RESPONSE DEBUG ===");
-    logger.log("Response body length:", responseBody.length);
-    logger.log("Content-Length header updated to:", responseBody.length);
-    logger.log("Response headers being sent:", JSON.stringify(responseHeaders, null, 2));
-    logger.log("Content-Length header:", responseHeaders["content-length"]);
-    logger.log("Content-Type header:", responseHeaders["content-type"]);
+    responseHeaders["content-length"] = [bufferedHtml.length.toString()];
     
     return createResponse(
       response.status,
       responseHeaders,
-      responseBody
+      bufferedHtml
     );
   } catch (e) {
-    //logger.log("Caught Error");
+    logger.log("Caught Error");
     if (e instanceof Error) {
       return createResponse(500, {}, e.message);
     }
-    //logger.log(`Error message: ${String(e)}`);
+    logger.log(`Error message: ${String(e)}`);
     return createResponse(500, {}, "");
   }
 }
 
-async function personalize(request, response, responseHeaders) {
+async function personalize(request, bufferedHtml, responseHeaders, status) {
   try {
-    //logger.log("Starting personalization process");
+    // logger.log("Starting personalization process with buffered HTML");
     
-    // Authenticate user
+    // Authenticate user (for Target API if needed)
     const authState = await authenticate(request);
-    //logger.log(`Authentication completed: ${authState.type}`);
+    // logger.log(`Authentication completed: ${authState.type}`);
     
-    // Get personalization data from Adobe Target
-    //logger.log("Fetching personalization data from Adobe Target...");
-    const personalizationData = await getPersonalizationData(request, authState);
-    // logger.log("Personalization Data Summary:", {
-    //  fragmentsCount: personalizationData.fragments?.length || 0,
-    //  commandsCount: personalizationData.commands?.length || 0,
-    //  fragments: personalizationData.fragments?.map(f => ({ selector: f.selector, val: f.val })) || [],
-    //  commands: personalizationData.commands?.map(c => ({ action: c.action, selector: c.selector })) || []
-    // });
-    // logger.log(`Personalization data retrieved: ${personalizationData.fragments?.length || 0} fragments, ${personalizationData.commands?.length || 0} commands`);
+    // Extract manifests from <meta> tags using buffered HTML
+    // logger.log("Extracting manifests from buffered HTML");
+    const personalizationData = await getPersonalizationData(request, authState, bufferedHtml);
+    
+    // logger.log(`Personalization Data Summary:`, JSON.stringify({
+    //   fragmentsCount: personalizationData.fragments?.length || 0,
+    //   commandsCount: personalizationData.commands?.length || 0,
+    //   fragments: personalizationData.fragments?.map(f => ({ selector: f.selector, val: f.val })) || [],
+    //   commands: personalizationData.commands?.map(c => ({ action: c.action, selector: c.selector })) || []
+    // }));
     
     // Check if we have any personalization data to apply
     if (!personalizationData.fragments?.length && !personalizationData.commands?.length) {
       logger.log("No personalization data to apply, returning original response");
-      logger.log("Response status:", response.status);
-      
-      // Get response body properly for Akamai EdgeWorkers
-      const responseBody = await response.text();
-      // logger.log("Response body length:", responseBody?.length || "unknown");
-      // logger.log("Response body preview:", responseBody?.substring(0, 200) || "no body");
-      // logger.log("Response headers:", JSON.stringify(responseHeaders, null, 2));
       
       // Update Content-Length header to match actual body length
-      responseHeaders["content-length"] = [responseBody.length.toString()];
+      responseHeaders["content-length"] = [bufferedHtml.length.toString()];
       
       return createResponse(
-        response.status,
+        status,
         responseHeaders,
-        responseBody
+        bufferedHtml
       );
     }
     
-    // Rewrite HTML with personalization
-    logger.log("Rewriting HTML with personalization data");
-    const personalizedResponse = await rewrite(response, personalizationData, responseHeaders);
-    //logger.log("=== PERSONALIZATION PROCESS COMPLETE ===");
+    // Rewrite HTML Using Buffered Response
+    // logger.log("Rewriting HTML using buffered response");
+    const personalizedResponse = await rewriteWithBufferedHtml(bufferedHtml, personalizationData, responseHeaders, status);
+    logger.log("=== PERSONALIZATION PROCESS COMPLETE ===");
     return personalizedResponse;
   } catch (e) {
-    //logger.log(`Personalization error: ${String(e)}`);
-    //logger.log(`Error stack: ${e instanceof Error ? e.stack : 'No stack trace'}`);
+    logger.log(`Personalization error: ${String(e)}`);
+    logger.log(`Error stack: ${e instanceof Error ? e.stack : 'No stack trace'}`);
     
-    // Return original response if personalization fails
-    const responseBody = await response.text();
+    // Return original buffered HTML if personalization fails
+    logger.log("Returning original buffered HTML due to personalization failure");
     
     // Update Content-Length header to match actual body length
-    responseHeaders["content-length"] = [responseBody.length.toString()];
+    responseHeaders["content-length"] = [bufferedHtml.length.toString()];
     
     return createResponse(
-      response.status,
+      status,
       responseHeaders,
-      responseBody
+      bufferedHtml
     );
   }
 }

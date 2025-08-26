@@ -7,6 +7,8 @@ EXTERNALS=(
   "http-request"
   "create-response"
   "log"
+  "encoding"
+  "streams"
 )
 
 # Convert array to esbuild external format

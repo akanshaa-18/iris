@@ -1,0 +1,58 @@
+{
+  "experiences": {
+    "data": [
+      {
+        "action": "replace",
+        "selector": "main > div.hero h1",
+        "all": "Welcome to Adobe",
+        "mobile": "Welcome to Adobe Mobile",
+        "desktop": "Welcome to Adobe Desktop",
+        "loggedin": "Welcome back, User!"
+      },
+      {
+        "action": "replace",
+        "selector": "main > div.hero p",
+        "all": "Discover amazing products",
+        "mobile": "Discover amazing mobile products",
+        "desktop": "Discover amazing desktop products"
+      },
+      {
+        "action": "fragment",
+        "selector": "main > div.content",
+        "all": "/fragments/hero-content",
+        "mobile": "/fragments/hero-content-mobile",
+        "desktop": "/fragments/hero-content-desktop"
+      },
+      {
+        "action": "remove",
+        "selector": "main > div.banner",
+        "all": "false",
+        "mobile": "true",
+        "desktop": "false"
+      },
+      {
+        "action": "updateattribute",
+        "selector": "main > div.cta a",
+        "all": "https://adobe.com",
+        "mobile": "https://adobe.com/mobile",
+        "desktop": "https://adobe.com/desktop"
+      }
+    ]
+  },
+  "info": {
+    "data": [
+      {
+        "key": "manifest-type",
+        "value": "Personalization"
+      },
+      {
+        "key": "manifest-execution-order",
+        "value": "First"
+      },
+      {
+        "key": "manifest-override-name",
+        "value": "hero-personalization"
+      }
+    ]
+  }
+}
