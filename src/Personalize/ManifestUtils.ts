@@ -464,12 +464,17 @@ export function determineLocale(request: any): { ietf: string; prefix: string; r
   return defaultLocale;
 }
 
-// Replace placeholders in content (like client-side replacePlaceholders)
+// Get file name from path (like client-side getFileName)
+export const getFileName = (path: string): string | undefined => path?.split('/').pop();
+
+// Replace placeholders in content (exactly like client-side replaceText from placeholders.js)
 export function replacePlaceholders(value: string, ph?: any): string {
-  const placeholders = ph || {};
-  if (!placeholders || value === null || value === undefined) return value;
+  // Handle null/undefined values
+  if (typeof value !== 'string' || !value.length) return value;
   
-  // Use the same regex as client-side: /{{(.*?)}}|%7B%7B(.*?)%7D%7D/g
+  const placeholders = ph || {};
+  
+  // Use the exact same regex as client-side placeholders.js
   const regex = /{{(.*?)}}|%7B%7B(.*?)%7D%7D/g;
   const matches = [...value.matchAll(new RegExp(regex))];
   
@@ -477,25 +482,25 @@ export function replacePlaceholders(value: string, ph?: any): string {
     return value;
   }
   
-  // Extract keys from matches (like client-side)
+  // Extract keys from matches (exactly like client-side)
   const keys = Array.from(matches, (match) => match[1] || match[2]);
   
-  // Get placeholder values for each key
+  // Get placeholder values for each key (like client-side getPlaceholder)
   const placeholderValues = keys.map(key => {
     const trimmedKey = key.trim();
     if (placeholders.hasOwnProperty(trimmedKey)) {
       return placeholders[trimmedKey];
     }
     // Fallback: convert key to string (like client-side keyToStr)
-    return trimmedKey.replaceAll('-', ' ');
+    return trimmedKey.replace(/-/g, ' ');
   });
   
-  // Replace all matches (like client-side)
+  // Replace all matches (exactly like client-side)
   let finalText = value;
   let i = 0;
-  finalText = finalText.replaceAll(regex, () => placeholderValues[i++]);
+  finalText = finalText.replace(regex, () => placeholderValues[i++]);
   
-  // Handle non-breaking spaces (like client-side)
+  // Handle non-breaking spaces (exactly like client-side)
   finalText = finalText.replace(/&nbsp;/g, '\u00A0');
   
   return finalText;

@@ -12,6 +12,13 @@ const COMMANDS_KEYS = {
   updateAttribute: 'updateattribute',
 };
 
+const CREATE_CMDS = {
+  insertafter: 'afterend',
+  insertbefore: 'beforebegin',
+  prepend: 'afterbegin',
+  append: 'beforeend',
+};
+
 // Rewrite HTML using buffered response (most efficient approach)
 export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, responseHeaders: any, status: number) => {
   // logger.log("=== HTML REWRITING START (Buffered Mode) ===");
@@ -32,24 +39,7 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
     }) || []
   );
 
-  // Transform fragments for processing (like client-side handleFragmentCommand)
-  const transformedFragments = await Promise.all(
-    data?.fragments?.map(async (frag: any) => {
-      let { modifiedSelector, modifiers, attribute } = modifyNonFragmentSelector(frag.selector, frag.action);
-      return { 
-        ...frag, 
-        selector: modifiedSelector, 
-        attribute,
-        type: "fragment",
-        path: frag.val
-      };
-    }) || []
-  );
-
   // logger.log("Transformed commands:", transformedData.length);
-  // logger.log("Transformed fragments:", transformedFragments.length);
-  
-  logger.log(`🔍 Processing ${transformedData.length} commands and ${transformedFragments.length} fragments`);
 
   const rewriter = new HtmlRewritingStream();
   
@@ -61,193 +51,164 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
 
   // Process global placeholders in original HTML content (like client-side decoratePlaceholders)
   if (data?.placeholders && Object.keys(data.placeholders).length > 0) {
-    logger.log(`🔍 Processing global placeholders: ${JSON.stringify(data.placeholders)}`);
-    
-    // Process the entire HTML content for placeholders before any other processing
     const processedHtml = replacePlaceholders(bufferedHtml, data.placeholders);
     if (processedHtml !== bufferedHtml) {
-      logger.log(`🔍 Replaced placeholders in HTML content`);
-      // Update the buffered HTML with processed content
       bufferedHtml = processedHtml;
     }
   }
 
   // Process commands (like client-side handleCommands) - this handles both commands AND fragments together
   for (const cmd of transformedData) {
-    const { action, selector, content, attribute, type, path, hasFragmentContent } = cmd;
-
+    const { action, selector, content, attribute, type, path } = cmd;
     // logger.log(`🔍 Processing command: action="${action}", selector="${selector}", content="${content}", type="${type}", hasFragmentContent="${hasFragmentContent}"`);
 
     // Handle fragment commands (like client-side getSelectedElements for fragments)
     if (type === "fragment") {
       logger.log(`🔍 Processing as FRAGMENT: selector="${selector}", action="${action}"`);
-      const fragmentHTML = await fetchFragmentContent(path);
-      logger.log(`Fragment HTML: ${fragmentHTML}`);
-      if (!fragmentHTML) {
-        continue;
-      }
+      // const fragmentHTML = await fetchFragmentContent(path);
+      // logger.log(`Fragment HTML: ${fragmentHTML}`);
+      // if (!fragmentHTML) {
+      //   continue;
+      // }
 
       // Final safety check before calling rewriter.onElement
-      if (selector.trim() === '') {
-        logger.log(`Final check: Skipping fragment command with empty selector after processing`);
-        continue;
-      }
+      // if (selector.trim() === '') {
+      //   logger.log(`Final check: Skipping fragment command with empty selector after processing`);
+      //   continue;
+      // }
 
       // Capture fragmentHTML in closure to ensure it's available in callback
-      const capturedFragmentHTML = fragmentHTML;
-      rewriter.onElement(selector, (el) => {
-        // Apply placeholder replacement to the fragment content
-        const processedFragmentHTML = replacePlaceholders(capturedFragmentHTML, data?.placeholders || {});
-        el.replaceChildren(processedFragmentHTML);
-      });
-
+      // const capturedFragmentHTML = fragmentHTML;
+      // rewriter.onElement(selector, (el) => {
+      //   // Apply placeholder replacement to the fragment content
+      //   const processedFragmentHTML = replacePlaceholders(capturedFragmentHTML, data?.placeholders || {});
+      //   el.replaceChildren(processedFragmentHTML);
+      // });
+      // rewriter.onElement(selector, (el) => {
+      //   // Apply placeholder replacement to fragment content (like client-side)
+      //   const processedFragmentHTML = replacePlaceholders(fragmentHTML, data?.placeholders || {});
+      //   el.replaceChildren(processedFragmentHTML);
+      // });
       continue;
     }
 
     // Handle commands with fragment content (like client-side createContent for fragment content)
-    if (hasFragmentContent) {
-      // logger.log(`🔍 Processing command with fragment content: selector="${selector}", content="${content}"`);
+    // if (hasFragmentContent) {
+    //   // logger.log(`🔍 Processing command with fragment content: selector="${selector}", content="${content}"`);
       
-      // Final safety check before calling rewriter.onElement
-      if (selector.trim() === '') {
-        logger.log(`Final check: Skipping command with empty selector after processing`);
-        continue;
-      }
+    //   // Final safety check before calling rewriter.onElement
+    //   if (selector.trim() === '') {
+    //     logger.log(`Final check: Skipping command with empty selector after processing`);
+    //     continue;
+    //   }
 
-      rewriter.onElement(selector, async (el) => {
-        if (action === "replace") {
-          const classAttr = el.getAttribute("class") || "";
-          if (!classAttr.split(/\s+/).includes("p13n-replaced")) {
-            // Apply placeholder replacement to content (like personalization.js)
-            const processedContent = replacePlaceholders(content, data?.placeholders || {});
-            logger.log(`Original content: "${content}"`);
-            logger.log(`Processed content: "${processedContent}"`);
+    //   rewriter.onElement(selector, async (el) => {
+    //     if (action === "replace") {
+    //       const classAttr = el.getAttribute("class") || "";
+    //       if (!classAttr.split(/\s+/).includes("p13n-replaced")) {
+    //         // Apply placeholder replacement to content (like personalization.js)
+    //         const processedContent = replacePlaceholders(content, data?.placeholders || {});
+    //         logger.log(`Original content: "${content}"`);
+    //         logger.log(`Processed content: "${processedContent}"`);
             
-            // Create content (like client-side createContent)
-            const newContent = await createFragmentContent(processedContent, el, data?.placeholders || {});
+    //         // Create content (like client-side createContent)
+    //         const newContent = await createFragmentContent(processedContent, el, data?.placeholders || {});
             
-            // Use before() which IS supported in Akamai EdgeWorkers
-            el.before(newContent);
-            el.setAttribute("class", classAttr + " p13n-replaced");
-          }
-        }
-      });
+    //         // Use before() which IS supported in Akamai EdgeWorkers
+    //         el.before(newContent);
+    //         el.setAttribute("class", classAttr + " p13n-replaced");
+    //       }
+    //     }
+    //   });
       
-      continue;
-    }
+    //   continue;
+    // }
 
     // Handle regular commands (like client-side handleCommands for non-fragment content)
     // Final safety check before calling rewriter.onElement
-    if (selector.trim() === '') {
-      logger.log(`Final check: Skipping command with empty selector after processing`);
-      continue;
-    }
+    // if (selector.trim() === '') {
+    //   logger.log(`Final check: Skipping command with empty selector after processing`);
+    //   continue;
+    // }
     // logger.log(`Selector: ${selector}`);
 
-    rewriter.onElement(selector, async (el) => {
+    // rewriter.onElement(selector, async (el) => {
+    //   if (action === "remove") {
+    //     // Mark with p13n-deleted class (like personalization.js)
+    //     const classAttr = el.getAttribute("class") || "";
+    //     el.setAttribute("class", classAttr + " p13n-deleted");
+        
+    //     // Actually remove the element (Akamai-compatible)
+    //     el.replaceWith('');
+    //   } else if (action === "replace") {
+    //     // Match personalization.js: insert before instead of replace children
+    //     const classAttr = el.getAttribute("class") || "";
+    //     if (!classAttr.split(/\s+/).includes("p13n-replaced")) {
+    //       // Apply placeholder replacement to content (like personalization.js)
+    //       // const processedContent = replacePlaceholders(content, data?.placeholders || {});
+    //       logger.log(`Original content: "${content}"`);
+    //       logger.log(`Processed content: "${processedContent}"`);
+          
+    //       // Create content (like client-side createContent for non-fragment content)
+    //       const newContent = await createFragmentContent(processedContent, el, data?.placeholders || {});
+          
+    //       // Use before() which IS supported in Akamai EdgeWorkers
+    //       el.before(newContent);
+    //       el.setAttribute("class", classAttr + " p13n-replaced");
+    //     }
+    //   } else if (action === "updateAttribute" && attribute) {
+    //     // Apply placeholder replacement to attribute value
+    //     const processedContent = replacePlaceholders(content, {});
+    //     el.setAttribute(attribute, processedContent);
+    //   }
+    // });
+    rewriter.onElement(selector, (el) => {
       if (action === "remove") {
-        // Mark with p13n-deleted class (like personalization.js)
         const classAttr = el.getAttribute("class") || "";
         el.setAttribute("class", classAttr + " p13n-deleted");
-        
-        // Actually remove the element (Akamai-compatible)
         el.replaceWith('');
       } else if (action === "replace") {
-        // Match personalization.js: insert before instead of replace children
         const classAttr = el.getAttribute("class") || "";
         if (!classAttr.split(/\s+/).includes("p13n-replaced")) {
-          // Apply placeholder replacement to content (like personalization.js)
-          const processedContent = replacePlaceholders(content, data?.placeholders || {});
           logger.log(`Original content: "${content}"`);
+          // Apply placeholder replacement to content (like client-side)
+          const processedContent = replacePlaceholders(content, data?.placeholders || {});
           logger.log(`Processed content: "${processedContent}"`);
-          
-          // Create content (like client-side createContent for non-fragment content)
-          const newContent = await createFragmentContent(processedContent, el, data?.placeholders || {});
-          
-          // Use before() which IS supported in Akamai EdgeWorkers
-          el.before(newContent);
+          el.replaceChildren(processedContent);
           el.setAttribute("class", classAttr + " p13n-replaced");
         }
-      } else if (action === "insertafter") {
-        // Apply placeholder replacement to content (like personalization.js)
+      } else if (action === "updateAttribute" && attribute) {
+        // Apply placeholder replacement to attribute value
         const processedContent = replacePlaceholders(content, data?.placeholders || {});
+        el.setAttribute(attribute, processedContent);
         
-        // Create content (like client-side createContent)
-        const newContent = await createFragmentContent(processedContent, el, data?.placeholders || {});
-        
-        // Insert after the element
-        el.after(newContent);
-      } else if (action === "insertbefore") {
-        // Apply placeholder replacement to content (like personalization.js)
-        const processedContent = replacePlaceholders(content, data?.placeholders || {});
-        
-        // Create content (like client-side createContent)
-        const newContent = await createFragmentContent(processedContent, el, data?.placeholders || {});
-        
-        // Insert before the element
-        el.before(newContent);
-      } else if (action === "prepend") {
-        // Apply placeholder replacement to content (like personalization.js)
-        const processedContent = replacePlaceholders(content, data?.placeholders || {});
-        
-        // Create content (like client-side createContent)
-        const newContent = await createFragmentContent(processedContent, el, data?.placeholders || {});
-        
-        // Prepend to the element
-        el.prepend(newContent);
-      } else if (action === "append") {
-        // Apply placeholder replacement to content (like personalization.js)
-        const processedContent = replacePlaceholders(content, data?.placeholders || {});
-        
-        // Create content (like client-side createContent)
-        const newContent = await createFragmentContent(processedContent, el, data?.placeholders || {});
-        
-        // Append to the element
-        el.append(newContent);
-      } else if (action === "updateAttribute") {
-        // Update attribute (like personalization.js)
-        if (attribute) {
-          el.setAttribute(attribute, content);
+        // Add IDs if available
+        if (cmd.manifestId || cmd.targetManifestId) {
+          addIds(el, cmd.manifestId || '', cmd.targetManifestId || '');
         }
+      } else if (action in CREATE_CMDS) {
+        // Handle CREATE_CMDS actions (like client-side)
+        const insertPosition = CREATE_CMDS[action as keyof typeof CREATE_CMDS];
+        const processedContent = replacePlaceholders(content, data?.placeholders || {});
+        
+        // Create content element
+        const newContentHTML = createContentElement(processedContent, cmd, data?.placeholders || {});
+        
+        // Use appropriate method based on insert position
+        if (insertPosition === 'beforebegin') {
+          el.before(newContentHTML);
+        } else if (insertPosition === 'afterend') {
+          el.after(newContentHTML);
+        } else if (insertPosition === 'afterbegin') {
+          el.prepend(newContentHTML);
+        } else if (insertPosition === 'beforeend') {
+          el.append(newContentHTML);
+        }
+        
+        // Note: IDs will be added to the HTML string itself since we can't manipulate DOM after insertion
       }
     });
-  }
-
-  // Process fragments (like client-side handleFragmentCommand)
-  for (const frag of transformedFragments) {
-    const { action, selector, val, attribute } = frag;
-
-    logger.log(`🔍 Processing fragment: selector="${selector}", action="${action}", val="${val}"`);
-
-    // Final safety check before calling rewriter.onElement
-    if (selector.trim() === '') {
-      logger.log(`Final check: Skipping fragment with empty selector after processing`);
-      continue;
-    }
-
-    rewriter.onElement(selector, async (el) => {
-      if (action === "replace") {
-        // Fetch fragment content
-        const fragmentHTML = await fetchFragmentContent(val);
-        if (fragmentHTML) {
-          // Apply placeholder replacement to the fragment content
-          const processedFragmentHTML = replacePlaceholders(fragmentHTML, data?.placeholders || {});
-          logger.log(`🔍 Replacing element with fragment content: ${processedFragmentHTML.substring(0, 100)}...`);
-          
-          // Replace the element content
-          el.replaceChildren(processedFragmentHTML);
-        } else {
-          logger.log(`🔍 Failed to fetch fragment content for: ${val}`);
-        }
-      } else if (action === "remove") {
-        // Mark with p13n-deleted class (like personalization.js)
-        const classAttr = el.getAttribute("class") || "";
-        el.setAttribute("class", classAttr + " p13n-deleted");
-        
-        // Actually remove the element (Akamai-compatible)
-        el.replaceWith('');
-      }
-    });
+  
   }
 
   logger.log("=== HTML REWRITING COMPLETE (Buffered Mode) ===");
@@ -315,8 +276,8 @@ function modifySelectorTerm(termParam) {
     section: 'main > div',
     'primary-cta': 'strong a',
     'secondary-cta': 'em a',
-    'action-area': '*:has(> em a, > strong a)',
-    'any-marquee-section': 'main > div:has([class*="marquee"])',
+    'action-area': 'em a, strong a', // Fallback for '*:has(> em a, > strong a)'
+    'any-marquee-section': 'main > div [class*="marquee"]', // Fallback for 'main > div:has([class*="marquee"])'
     'any-marquee': '[class*="marquee"]',
     'any-header': ':is(h1, h2, h3, h4, h5, h6)',
   };
@@ -367,7 +328,7 @@ function getModifiers(selector) {
   return { sel, modifiers };
 }
 
-async function fetchFragmentContent(path: string): Promise<string | null> {
+function fetchFragmentContent(path: string): Promise<string | null> {
   try {
     // Process path like personalization.js
     let plainPath = path.endsWith('/') ? `${path}index` : path;
@@ -415,6 +376,41 @@ async function fetchFragmentContent(path: string): Promise<string | null> {
     logger.log(`Error fetching fragment ${path}: ${error}`);
     return null;
   }
+}
+
+// Add element IDs (like client-side addIds)
+function addIds(el: any, manifestId: string, targetManifestId: string) {
+  if (manifestId) el.setAttribute('data-manifest-id', manifestId);
+  if (targetManifestId) el.setAttribute('data-adobe-target-testid', targetManifestId);
+}
+
+// Create content element (like client-side createContent)
+function createContentElement(content: string, cmd: any, placeholders: any = {}): string {
+  const isFragment = content.startsWith('/') || content.startsWith('http');
+  
+  let elementHTML = '';
+  if (isFragment) {
+    // Create link element (like client-side createFrag)
+    elementHTML = `<a href="${content}">${content}</a>`;
+  } else {
+    // Create div with content
+    elementHTML = `<div>${content}</div>`;
+  }
+  
+  // Add IDs directly to the HTML string
+  if (cmd.manifestId || cmd.targetManifestId) {
+    const idAttributes = [];
+    if (cmd.manifestId) idAttributes.push(`data-manifest-id="${cmd.manifestId}"`);
+    if (cmd.targetManifestId) idAttributes.push(`data-adobe-target-testid="${cmd.targetManifestId}"`);
+    
+    // Insert attributes after the opening tag
+    const tagEnd = elementHTML.indexOf('>');
+    if (tagEnd > 0) {
+      elementHTML = elementHTML.slice(0, tagEnd) + ' ' + idAttributes.join(' ') + elementHTML.slice(tagEnd);
+    }
+  }
+  
+  return elementHTML;
 }
 
 function createFragmentHTML(content: string, el: any): string {
