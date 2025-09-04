@@ -101,8 +101,8 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
       
       // Process fragment content like client-side: parse, extract sections, create fragment structure
       let processedFragmentHTML = await processFragmentContent(fragmentHTML, path, data?.placeholders || {});
-      const fragmentWrapper = createFragmentWrapper(processedFragmentHTML, path, cmd.manifestId, cmd.targetManifestId);
-      // const fragmentWrapper = processedFragmentHTML;
+      // const fragmentWrapper = createFragmentWrapper(processedFragmentHTML, path, cmd.manifestId, cmd.targetManifestId);
+      const fragmentWrapper = processedFragmentHTML;
       
       logger.log(`Final processed fragment content (first 1000 chars): ${processedFragmentHTML.substring(0, 1000)}...`);
       
@@ -527,10 +527,12 @@ function extractSections(html: string): string[] {
   } else {
     // If no body tag found, extract the inner content from the outer div
     // This handles cases where the fragment content doesn't have a body wrapper
-    const outerDivRegex = /<div[^>]*>([\s\S]*?)<\/div>$/i;
+    // const outerDivRegex = /<div[^>]*>([\s\S]*?)<\/div>$/i;
+    const outerDivRegex = /<div[^>]*>([\s\S]*?)<\/div>\s*$/i;
     const outerMatch = html.match(outerDivRegex);
     
     if (outerMatch) {
+      logger.log(`Outer match: ${outerMatch[1]}`);
       // Extract the inner content (remove the outer div wrapper)
       sections.push(outerMatch[1]);
     } else {
@@ -548,7 +550,8 @@ function createFragmentStructure(sections: string[], fragmentPath: string): stri
   const normalizedPath = normalizePath(fragmentPath, true);
   
   // Create fragment wrapper like client-side createTag
-  let fragmentHTML = `<div class="fragment" data-path="${normalizedPath}">`;
+  // let fragmentHTML = `<div class="fragment" data-path="${normalizedPath}">`;
+  let fragmentHTML = ``;
   
   // Append sections like client-side fragment.append(...sections)
   // This ensures the original content is WRAPPED, not replaced
@@ -556,7 +559,7 @@ function createFragmentStructure(sections: string[], fragmentPath: string): stri
     fragmentHTML += section;
   });
   
-  fragmentHTML += '</div>';
+  // fragmentHTML += '</div>';
   
   return fragmentHTML;
 }
