@@ -30,10 +30,20 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
   // Transform commands for processing (like client-side handleCommands)
   const transformedData = await Promise.all(
     data?.commands?.map(async (cmd: any) => {
-      if (cmd.type === "fragment") {
-        return { ...cmd, type: "fragment", path: cmd.path };
+      // Check if this is a fragment command (like client-side getSelectorType)
+      const isFragmentContent = cmd.content && (cmd.content.startsWith('/') || cmd.content.startsWith('http'));
+      
+      if (isFragmentContent) {
+        // This is a fragment command (like client-side fragment processing)
+        return { 
+          ...cmd, 
+          type: "fragment", 
+          path: cmd.content,
+          selector: cmd.selector 
+        };
       }
       
+      // Regular command processing
       let { modifiedSelector, modifiers, attribute } = modifyNonFragmentSelector(cmd.selector, cmd.action);
       return { ...cmd, selector: modifiedSelector, attribute };
     }) || []
@@ -58,37 +68,51 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
   }
 
   // Process commands (like client-side handleCommands) - this handles both commands AND fragments together
+  // logger.log(`🔍 Starting to process ${transformedData.length} commands`);
+  
   for (const cmd of transformedData) {
     const { action, selector, content, attribute, type, path } = cmd;
-    // logger.log(`🔍 Processing command: action="${action}", selector="${selector}", content="${content}", type="${type}", hasFragmentContent="${hasFragmentContent}"`);
+    // logger.log(`🔍 Processing command: action="${action}", selector="${selector}", content="${content}", type="${type}"`);
+
+    // Skip commands that contain #modal-hash (modal-related commands)
+    if (content && content.includes('#modal-hash')) {
+      logger.log(`🔍 Skipping modal command: action="${action}", selector="${selector}"`);
+      continue;
+    }
 
     // Handle fragment commands (like client-side getSelectedElements for fragments)
     if (type === "fragment") {
-      logger.log(`🔍 Processing as FRAGMENT: selector="${selector}", action="${action}"`);
-      // const fragmentHTML = await fetchFragmentContent(path);
-      // logger.log(`Fragment HTML: ${fragmentHTML}`);
-      // if (!fragmentHTML) {
-      //   continue;
-      // }
+      // logger.log(`Processing fragment command: selector="${selector}", action="${action}"`);
+      
+      // Apply the same selector transformation as regular commands (like client-side modifyNonFragmentSelector)
+      let { modifiedSelector, modifiers, attribute } = modifyNonFragmentSelector(selector, action);
+      // logger.log(`Fragment selector transformed from "${selector}" to "${modifiedSelector}"`);
+      
+      const fragmentHTML = await fetchFragmentContent(path);
+      // logger.log(`Fragment HTML fetched, length: ${fragmentHTML?.length || 0}`);
+      if (!fragmentHTML) {
+        logger.log(`No fragment HTML found for path: ${path}`);
+        continue;
+      }
 
-      // Final safety check before calling rewriter.onElement
-      // if (selector.trim() === '') {
-      //   logger.log(`Final check: Skipping fragment command with empty selector after processing`);
-      //   continue;
-      // }
-
-      // Capture fragmentHTML in closure to ensure it's available in callback
-      // const capturedFragmentHTML = fragmentHTML;
-      // rewriter.onElement(selector, (el) => {
-      //   // Apply placeholder replacement to the fragment content
-      //   const processedFragmentHTML = replacePlaceholders(capturedFragmentHTML, data?.placeholders || {});
-      //   el.replaceChildren(processedFragmentHTML);
-      // });
-      // rewriter.onElement(selector, (el) => {
-      //   // Apply placeholder replacement to fragment content (like client-side)
-      //   const processedFragmentHTML = replacePlaceholders(fragmentHTML, data?.placeholders || {});
-      //   el.replaceChildren(processedFragmentHTML);
-      // });
+      // Process fragment synchronously by directly modifying the HTML content (like client-side)
+      // This ensures fragments are processed BEFORE HTML rewriting starts
+      // logger.log(`Processing fragment synchronously for selector: "${modifiedSelector}"`);
+      
+      // Process fragment content like client-side: parse, extract sections, create fragment structure
+      let processedFragmentHTML = await processFragmentContent(fragmentHTML, path, data?.placeholders || {});
+      const fragmentWrapper = createFragmentWrapper(processedFragmentHTML, path, cmd.manifestId, cmd.targetManifestId);
+      // const fragmentWrapper = processedFragmentHTML;
+      
+      logger.log(`Final processed fragment content (first 1000 chars): ${processedFragmentHTML.substring(0, 1000)}...`);
+      
+      // Use HTML Rewriter to replace elements (like client-side a.parentElement.replaceChild(fragment, a))
+      rewriter.onElement(modifiedSelector, (el) => {
+        // Replace the element with the wrapped fragment content
+        el.replaceWith(fragmentWrapper);
+        logger.log(`Fragment content applied using HTML Rewriter to selector: "${modifiedSelector}"`);
+      });
+      
       continue;
     }
 
@@ -162,23 +186,58 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
     //     el.setAttribute(attribute, processedContent);
     //   }
     // });
+    // Track if we've already processed the first element for this selector (like client-side behavior)
+    let isFirstElement = true;
+    
     rewriter.onElement(selector, (el) => {
+      // Only process the first matching element (like client-side getSelectedElements)
+      if (!isFirstElement) {
+        return;
+      }
+      isFirstElement = false;
+      
+      // logger.log(`🔍 Processing element for selector: "${selector}", action: "${action}"`);
+      
       if (action === "remove") {
+        // Handle remove action (like client-side COMMANDS.remove)
         const classAttr = el.getAttribute("class") || "";
-        el.setAttribute("class", classAttr + " p13n-deleted");
-        el.replaceWith('');
+        if (content !== 'false') {
+          el.setAttribute("class", classAttr + " p13n-deleted");
+        }
+        // logger.log(`✅ Remove action applied to selector: "${selector}"`);
+        // Note: In Akamai HTML Rewriter, we can't remove elements directly
+        // The p13n-deleted class will be used for styling/identification
+        
       } else if (action === "replace") {
+        // Handle replace action (like client-side COMMANDS.replace)
         const classAttr = el.getAttribute("class") || "";
         if (!classAttr.split(/\s+/).includes("p13n-replaced")) {
-          logger.log(`Original content: "${content}"`);
-          // Apply placeholder replacement to content (like client-side)
-          const processedContent = replacePlaceholders(content, data?.placeholders || {});
-          logger.log(`Processed content: "${processedContent}"`);
-          el.replaceChildren(processedContent);
+          // logger.log(`Original content: "${content}"`);
+          
+          // Check if content is a fragment (like client-side createContent)
+          const isFragment = content && (content.startsWith('/') || content.startsWith('http'));
+          
+          if (isFragment) {
+            // For fragments: create link element (like client-side createFrag)
+            const processedContent = replacePlaceholders(content, data?.placeholders || {});
+            const fragmentHTML = createFragmentHTML(processedContent, el);
+            const newContentHTML = createContentElement(fragmentHTML, cmd, data?.placeholders || {});
+            
+            // Insert BEFORE element (like client-side insertAdjacentElement('beforebegin'))
+            el.before(newContentHTML);
+            // logger.log(`✅ Fragment replace action applied to selector: "${selector}"`);
+          } else {
+            // For non-fragments: replace content directly (like client-side innerHTML)
+            const processedContent = replacePlaceholders(content, data?.placeholders || {});
+            el.replaceChildren(processedContent);
+            // logger.log(`✅ Text replace action applied to selector: "${selector}"`);
+          }
+          
           el.setAttribute("class", classAttr + " p13n-replaced");
         }
+        
       } else if (action === "updateAttribute" && attribute) {
-        // Apply placeholder replacement to attribute value
+        // Handle updateAttribute action (like client-side COMMANDS.updateAttribute)
         const processedContent = replacePlaceholders(content, data?.placeholders || {});
         el.setAttribute(attribute, processedContent);
         
@@ -186,15 +245,26 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
         if (cmd.manifestId || cmd.targetManifestId) {
           addIds(el, cmd.manifestId || '', cmd.targetManifestId || '');
         }
+        
       } else if (action in CREATE_CMDS) {
-        // Handle CREATE_CMDS actions (like client-side)
+        // Handle CREATE_CMDS actions (like client-side CREATE_CMDS)
         const insertPosition = CREATE_CMDS[action as keyof typeof CREATE_CMDS];
         const processedContent = replacePlaceholders(content, data?.placeholders || {});
         
-        // Create content element
-        const newContentHTML = createContentElement(processedContent, cmd, data?.placeholders || {});
+        // Check if content is a fragment (like client-side createContent)
+        const isFragment = content && (content.startsWith('/') || content.startsWith('http'));
         
-        // Use appropriate method based on insert position
+        let newContentHTML;
+        if (isFragment) {
+          // For fragments: create link element (like client-side createFrag)
+          const fragmentHTML = createFragmentHTML(processedContent, el);
+          newContentHTML = createContentElement(fragmentHTML, cmd, data?.placeholders || {});
+        } else {
+          // For non-fragments: create div with content (like client-side createContent)
+          newContentHTML = createContentElement(processedContent, cmd, data?.placeholders || {});
+        }
+        
+        // Use appropriate method based on insert position (like client-side insertAdjacentElement)
         if (insertPosition === 'beforebegin') {
           el.before(newContentHTML);
         } else if (insertPosition === 'afterend') {
@@ -205,11 +275,14 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
           el.append(newContentHTML);
         }
         
-        // Note: IDs will be added to the HTML string itself since we can't manipulate DOM after insertion
+        // Note: IDs are already included in the HTML string from createContentElement
       }
     });
   
   }
+
+  // Clean up marked elements (like client-side deleteMarkedEls)
+  cleanupMarkedElements(rewriter);
 
   logger.log("=== HTML REWRITING COMPLETE (Buffered Mode) ===");
   
@@ -328,13 +401,21 @@ function getModifiers(selector) {
   return { sel, modifiers };
 }
 
-function fetchFragmentContent(path: string): Promise<string | null> {
+async function fetchFragmentContent(path: string): Promise<string | null> {
   try {
-    // Process path like personalization.js
-    let plainPath = path.endsWith('/') ? `${path}index` : path;
-    plainPath = plainPath.endsWith('.plain.html') ? plainPath : `${plainPath}.plain.html`;
+    // Process path like client-side fragment.js
+    let resourcePath = path;
     
-    // Remove hash fragments before adding .plain.html
+    // Handle federal URLs (like client-side fragment.js)
+    if (path.includes('/federal/')) {
+      // Note: In server-side, we'll use the path as-is since we don't have getFederatedUrl
+      // The normalizePath function should handle this appropriately
+    }
+    
+    // Add .plain.html suffix (like client-side fragment.js)
+    let plainPath = resourcePath.endsWith('.plain.html') ? resourcePath : `${resourcePath}.plain.html`;
+    
+    // Remove hash fragments before adding .plain.html (like client-side fragment.js)
     if (plainPath.includes('#')) {
       const [pathWithoutHash] = plainPath.split('#');
       plainPath = pathWithoutHash;
@@ -358,12 +439,6 @@ function fetchFragmentContent(path: string): Promise<string | null> {
       return null;
     }
 
-    const contentType = response.getHeader('content-type');
-    // if (!contentType || !contentType.includes('text/html')) {
-    //   logger.log(`Invalid content type for fragment ${normalizedPath}: ${contentType}`);
-    //   return null;
-    // }
-
     const fragmentContent = await response.text();
     if (!fragmentContent) {
       logger.log(`Empty fragment content for ${normalizedPath}`);
@@ -384,6 +459,168 @@ function addIds(el: any, manifestId: string, targetManifestId: string) {
   if (targetManifestId) el.setAttribute('data-adobe-target-testid', targetManifestId);
 }
 
+// Clean up marked elements (like client-side deleteMarkedEls)
+function cleanupMarkedElements(rewriter: HtmlRewritingStream) {
+  // Remove elements marked with p13n-deleted class
+  rewriter.onElement('[class*="p13n-deleted"]', (el) => {
+    el.remove();
+  });
+}
+
+// Process fragment content like client-side fragment.js
+async function processFragmentContent(fragmentHTML: string, fragmentPath: string, placeholders: any = {}): Promise<string> {
+  try {
+    // Step 1: Apply placeholder replacement (like client-side)
+    let processedHTML = replacePlaceholders(fragmentHTML, placeholders);
+    
+    // Step 2: Apply media path replacement (like client-side replaceDotMedia)
+    processedHTML = replaceDotMedia(processedHTML, fragmentPath);
+    
+    // Step 3: Extract sections like client-side (body > div)
+    const sections = extractSections(processedHTML);
+    
+    if (sections.length === 0) {
+      logger.log(`No sections found in fragment content for ${fragmentPath}`);
+      return processedHTML; // Return original if no sections found
+    }
+    
+    // Step 4: Create fragment structure like client-side
+    const fragmentContent = createFragmentStructure(sections, fragmentPath);
+    
+    logger.log(`Processed fragment content: ${sections.length} sections extracted and structured`);
+    return fragmentContent;
+    
+  } catch (error) {
+    logger.log(`Error processing fragment content for ${fragmentPath}: ${error}`);
+    return fragmentHTML; // Return original on error
+  }
+}
+
+// Extract sections from HTML content (like client-side doc.querySelectorAll('body > div'))
+function extractSections(html: string): string[] {
+  const sections: string[] = [];
+  
+  // Use regex to find body > div sections (like client-side)
+  const bodyDivRegex = /<body[^>]*>([\s\S]*?)<\/body>/i;
+  const bodyMatch = html.match(bodyDivRegex);
+  
+  if (bodyMatch) {
+    const bodyContent = bodyMatch[1];
+    
+    // Find all div elements that are direct children of body
+    const divRegex = /<div[^>]*>[\s\S]*?<\/div>/gi;
+    let divMatch;
+    
+    while ((divMatch = divRegex.exec(bodyContent)) !== null) {
+      // Check if this div is a direct child of body (not nested)
+      const divContent = divMatch[0];
+      const beforeDiv = bodyContent.substring(0, divMatch.index);
+      
+      // Simple check: if there are no unclosed div tags before this one, it's a direct child
+      const openDivsBefore = (beforeDiv.match(/<div[^>]*>/gi) || []).length;
+      const closeDivsBefore = (beforeDiv.match(/<\/div>/gi) || []).length;
+      
+      if (openDivsBefore === closeDivsBefore) {
+        sections.push(divContent);
+      }
+    }
+  } else {
+    // If no body tag found, extract the inner content from the outer div
+    // This handles cases where the fragment content doesn't have a body wrapper
+    const outerDivRegex = /<div[^>]*>([\s\S]*?)<\/div>$/i;
+    const outerMatch = html.match(outerDivRegex);
+    
+    if (outerMatch) {
+      // Extract the inner content (remove the outer div wrapper)
+      sections.push(outerMatch[1]);
+    } else {
+      // Fallback: use the entire HTML
+      sections.push(html);
+    }
+  }
+  
+  return sections;
+}
+
+// Create fragment structure like client-side createTag and append
+function createFragmentStructure(sections: string[], fragmentPath: string): string {
+  // Use normalizePath to get the correct data-path format
+  const normalizedPath = normalizePath(fragmentPath, true);
+  
+  // Create fragment wrapper like client-side createTag
+  let fragmentHTML = `<div class="fragment" data-path="${normalizedPath}">`;
+  
+  // Append sections like client-side fragment.append(...sections)
+  // This ensures the original content is WRAPPED, not replaced
+  sections.forEach(section => {
+    fragmentHTML += section;
+  });
+  
+  fragmentHTML += '</div>';
+  
+  return fragmentHTML;
+}
+
+// Replace relative media paths with absolute URLs (like client-side replaceDotMedia)
+function replaceDotMedia(fragmentHTML: string, fragmentPath: string): string {
+  // Extract base URL from fragment path
+  let baseUrl = '';
+  try {
+    const url = new URL(fragmentPath);
+    baseUrl = url.origin + url.pathname.substring(0, url.pathname.lastIndexOf('/') + 1);
+  } catch {
+    // If path is not a valid URL, use as is
+    baseUrl = fragmentPath.substring(0, fragmentPath.lastIndexOf('/') + 1);
+  }
+  
+  // Replace relative media paths with absolute URLs
+  let processedHTML = fragmentHTML;
+  
+  // Replace src attributes with relative media paths
+  processedHTML = processedHTML.replace(
+    /src="\.\/media_([^"]+)"/g,
+    (match, mediaPath) => `src="${baseUrl}media_${mediaPath}"`
+  );
+  
+  // Replace srcset attributes with relative media paths
+  processedHTML = processedHTML.replace(
+    /srcset="\.\/media_([^"]+)"/g,
+    (match, mediaPath) => `srcset="${baseUrl}media_${mediaPath}"`
+  );
+  
+  // Replace domain from main--cc--adobecom.aem.page to www.stage.adobe.com
+  processedHTML = processedHTML.replace(
+    /https:\/\/main--cc--adobecom\.aem\.page/g,
+    'https://www.stage.adobe.com'
+  );
+  
+  return processedHTML;
+}
+
+// Create fragment wrapper similar to client-side createTag approach
+function createFragmentWrapper(fragmentHTML: string, path: string, manifestId?: string, targetManifestId?: string): string {
+  // Since processFragmentContent already creates the fragment structure,
+  // we just need to add the manifest IDs to the existing fragment div
+  
+  // Add manifest ID if available
+  if (manifestId) {
+    fragmentHTML = fragmentHTML.replace(
+      /<div class="fragment" data-path="[^"]*"/,
+      `$& data-manifest-id="${manifestId}"`
+    );
+  }
+  
+  // Add target manifest ID if available
+  if (targetManifestId) {
+    fragmentHTML = fragmentHTML.replace(
+      /<div class="fragment" data-path="[^"]*"[^>]*/,
+      `$& data-adobe-target-testid="${targetManifestId}"`
+    );
+  }
+  
+  return fragmentHTML;
+}
+
 // Create content element (like client-side createContent)
 function createContentElement(content: string, cmd: any, placeholders: any = {}): string {
   const isFragment = content.startsWith('/') || content.startsWith('http');
@@ -391,7 +628,27 @@ function createContentElement(content: string, cmd: any, placeholders: any = {})
   let elementHTML = '';
   if (isFragment) {
     // Create link element (like client-side createFrag)
-    elementHTML = `<a href="${content}">${content}</a>`;
+    let href = content;
+    try {
+      const url = new URL(content);
+      href = `${url.pathname}${url.search}${url.hash}`;
+    } catch {
+      // ignore
+    }
+    
+    // Create anchor element (like client-side createFrag)
+    const a = `<a href="${href}">${content}</a>`;
+    
+    // Check if it's a delayed modal anchor (like client-side createFrag)
+    const isDelayedModalAnchor = /#.*delay=/.test(href);
+    
+    if (isDelayedModalAnchor) {
+      // Wrap in p with hide-block class (like client-side createFrag)
+      elementHTML = `<p class="hide-block">${a}</p>`;
+    } else {
+      // Wrap in p without hide-block class (like client-side createFrag)
+      elementHTML = `<p>${a}</p>`;
+    }
   } else {
     // Create div with content
     elementHTML = `<div>${content}</div>`;

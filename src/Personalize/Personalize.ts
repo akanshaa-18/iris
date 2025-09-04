@@ -206,7 +206,7 @@ export async function getPersonalizationData(request: any, authState: any, htmlC
     
     // logger.log(`📋 Total manifest sources found: ${manifestSources.length}`);
     manifestSources.forEach((source, index) => {
-      // logger.log(`📋 Source ${index + 1}: ${source.manifestPath} (${source.source?.join(', ')})`);
+      // logger.log(`Source ${index + 1}: ${source.manifestPath} (${source.source?.join(', ')})`);
     });
     
     if (!manifestSources.length) {
@@ -310,7 +310,7 @@ export async function getPersonalizationData(request: any, authState: any, htmlC
     // Consolidate all actions (like client-side consolidateObjects and consolidateArray)
     config.mep.blocks = consolidateObjects(results, 'blocks', config.mep.blocks);
     config.mep.fragments = consolidateObjects(results, 'fragments', config.mep.fragments);
-    // logger.log(`Fragments: ${JSON.stringify(config.mep.fragments)}`);
+    // logger.log(`Fragments: ${JSON.stringify(config.mep.fragments[])}`);
     
     // Debug: Check what's in results before consolidation
     // logger.log(`Results before consolidation:`, JSON.stringify(results.map(r => ({ 
