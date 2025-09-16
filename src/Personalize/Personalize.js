@@ -1,21 +1,14 @@
-import { determineLocale } from "../Utilities/Utilities";
+import { determineLocale } from "../Utilities/Utilities.js";
 import { httpRequest } from "http-request";
 import { logger } from "log";
-import { loadManifests, getAllManifests, getManifestSummary } from "./ManifestLoader";
+import { loadManifests, getAllManifests, getManifestSummary } from "./ManifestLoader.js";
 import { 
-  Manifest, 
   parseManifestConfig, 
   parseManifestVariants, 
   getPersonalizationVariant,
   matchGlob 
-} from "./ManifestParser";
-import { normalizePath, replacePlaceholders, getFileName } from "./ManifestUtils";
-
-export type ProcessedData = { 
-  fragments?: Array<{ selector: string; val: string; action: string; manifestId?: string; targetManifestId?: string }>;
-  commands?: Array<{ action: string; selector: string; content: string; manifestId?: string; targetManifestId?: string; modifiers?: string[]; attribute?: string }>;
-  placeholders?: Record<string, string>;
-};
+} from "./ManifestParser.js";
+import { normalizePath, replacePlaceholders, getFileName } from "./ManifestUtils.js";
 
 // Constants
 const AMCV_COOKIE = 'AMCV_9E1005A551ED61CA0A490D45@AdobeOrg';
@@ -23,14 +16,14 @@ const REPORT_SUITES_ID = 'adobecom,adobecomdev';
 const AT_PROPERTY_VAL = 'bc8dfa27-29cc-625c-22ea-f7ccebfc6231';
 
 // Helper function to determine selector type
-function getSelectorType(selector: string): string {
+function getSelectorType(selector) {
   const sel = selector?.toLowerCase().trim();
   if (sel?.startsWith("/") || sel?.startsWith("http")) return "fragment";
   return "other";
 }
 
 // Helper function to get Target property based on page region
-function getTargetPropertyBasedOnPageRegion({ env, pathname }: { env: string; pathname: string }): string {
+function getTargetPropertyBasedOnPageRegion({ env, pathname }) {
   // Default property value
   const defaultProperty = 'bc8dfa27-29cc-625c-22ea-f7ccebfc6231';
   
@@ -47,59 +40,22 @@ function getTargetPropertyBasedOnPageRegion({ env, pathname }: { env: string; pa
   return defaultProperty;
 }
 
-// Helper function to get or generate user ID from cookies
-// function getOrGenerateUserId(cookies: Record<string, string>): any {
-//   // Check for existing user ID in cookies
-//   const amcvCookie = cookies[AMCV_COOKIE];
-//   const kndctrCookie = cookies['kndctr_9E1005A551ED61CA0A490D45_AdobeOrg_identity'];
-  
-//   if (amcvCookie) {
-//     return {
-//       "AMCV_9E1005A551ED61CA0A490D45@AdobeOrg": [{
-//         "id": amcvCookie,
-//         "authenticatedState": "authenticated",
-//         "primary": true
-//       }]
-//     };
-//   }
-  
-//   if (kndctrCookie) {
-//     return {
-//       "kndctr_9E1005A551ED61CA0A490D45_AdobeOrg_identity": [{
-//         "id": kndctrCookie,
-//         "authenticatedState": "authenticated",
-//         "primary": true
-//       }]
-//     };
-//   }
-  
-//   // Generate a temporary anonymous ID if no existing ID found
-//   const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-//   return {
-//     "anonymous": [{
-//       "id": tempId,
-//       "authenticatedState": "ambiguous",
-//       "primary": true
-//     }]
-//   };
-// }
-
 // Process Adobe Alloy/Target response (mirrors client-side handleAlloyResponse exactly)
-function handleAlloyResponse(response: any): any[] {
+function handleAlloyResponse(response) {
   // Find the personalization:decisions from the handle array
-  const personalizationDecisions = response?.handle?.find((h: any) => h.type === "personalization:decisions");
+  const personalizationDecisions = response?.handle?.find((h) => h.type === "personalization:decisions");
   
   if (!personalizationDecisions?.payload) {
     return [];
   }
 
   return personalizationDecisions.payload
-    ?.map((i: any) => {
+    ?.map((i) => {
       const { id } = i;
-      return i.items.map((item: any) => ({ ...item, id }));
+      return i.items.map((item) => ({ ...item, id }));
     })
     ?.flat()
-    ?.map((item: any) => {
+    ?.map((item) => {
       const content = item?.data?.content;
       if (!content || !(content.manifestLocation || content.manifestContent)) return null;
       return {
@@ -118,7 +74,7 @@ function handleAlloyResponse(response: any): any[] {
 }
 
 // Fetch main page placeholders (like client-side decoratePlaceholders)
-async function fetchMainPagePlaceholders(request: any, locale: any): Promise<Record<string, string>> {
+async function fetchMainPagePlaceholders(request, locale) {
   try {
     // Build contentRoot like client-side (from config.locale.contentRoot)
     const hostname = request.host || 'www.adobe.com';
@@ -130,29 +86,20 @@ async function fetchMainPagePlaceholders(request: any, locale: any): Promise<Rec
     const root = `${contentRoot}/cc-shared/placeholders`;
     const paths = [`${root}.json`];
     
-    // if (env !== 'prod') {
-    //   // Check if placeholders-stage is enabled (like client-side)
-    //   // For now, we'll always include stage placeholders in non-prod
-    //   paths.push(`${root}-stage.json`);
-    // }
-    
-    // logger.log(`🔍 Fetching main page placeholders from paths: ${JSON.stringify(paths)}`);
-    
     // Parse placeholder JSON (like client-side parsePlaceholderJson)
-    const parsePlaceholderJson = async (resp: any, placeholders: Record<string, string>) => {
+    const parsePlaceholderJson = async (resp, placeholders) => {
       try {
         const json = resp.ok ? await resp.json() : { data: [] };
-        json.data?.forEach((item: any) => {
+        json.data?.forEach((item) => {
           placeholders[item.key] = item.value;
         });
-        // logger.log(`✅ Parsed placeholders: ${JSON.stringify(placeholders)}`);
       } catch (e) {
         logger.log(`❌ Error parsing placeholder json: ${e}`);
       }
     };
     
     // Fetch placeholder (like client-side fetchPlaceholder)
-    const fetchPlaceholder = async (path: string): Promise<Record<string, string>> => {
+    const fetchPlaceholder = async (path) => {
       try {
         const response = await httpRequest(path, {
           headers: {
@@ -161,7 +108,7 @@ async function fetchMainPagePlaceholders(request: any, locale: any): Promise<Rec
           }
         });
         
-        const placeholders: Record<string, string> = {};
+        const placeholders = {};
         await parsePlaceholderJson(response, placeholders);
         return placeholders;
       } catch (error) {
@@ -175,7 +122,7 @@ async function fetchMainPagePlaceholders(request: any, locale: any): Promise<Rec
     const placeholderResults = await Promise.all(placeholderPromises);
     
     // Merge all placeholder results (like client-side)
-    const mergedPlaceholders: Record<string, string> = {};
+    const mergedPlaceholders = {};
     placeholderResults.forEach(result => {
       if (result && typeof result === 'object') {
         Object.assign(mergedPlaceholders, result);
@@ -183,11 +130,8 @@ async function fetchMainPagePlaceholders(request: any, locale: any): Promise<Rec
     });
     
     // Add fallback for missing placeholders (like client-side keyToStr)
-    const keyToStr = (key: string) => key.replaceAll('-', ' ');
+    const keyToStr = (key) => key.replaceAll('-', ' ');
     
-    // For any placeholders that weren't found, use keyToStr as fallback
-    // This matches the client-side behavior exactly
-    // logger.log(`🔍 Final merged placeholders: ${JSON.stringify(mergedPlaceholders)}`);
     return mergedPlaceholders;
     
   } catch (error) {
@@ -196,25 +140,17 @@ async function fetchMainPagePlaceholders(request: any, locale: any): Promise<Rec
   }
 }
 
-export async function getPersonalizationData(request: any, authState: any, htmlContent: string): Promise<ProcessedData> {
+export async function getPersonalizationData(request, authState, htmlContent) {
   const startTime = Date.now();
-  // logger.log("Starting unified manifest-based personalization data processing");
   
   try {
     // Load all RAW MANIFEST SOURCES (like client-side combineMepSources + handleAlloyResponse)
     const manifestSources = await getAllManifests(htmlContent, request, authState);
     
-    // logger.log(`📋 Total manifest sources found: ${manifestSources.length}`);
-    manifestSources.forEach((source, index) => {
-      // logger.log(`Source ${index + 1}: ${source.manifestPath} (${source.source?.join(', ')})`);
-    });
-    
     if (!manifestSources.length) {
       logger.log("No manifest sources found for personalization");
       return { fragments: [], commands: [], placeholders: {} };
     }
-    
-    // logger.log(`Found ${manifestSources.length} manifest sources to process`);
     
     // PROCESS ALL MANIFESTS TOGETHER (like client-side applyPers)
     let experiments = manifestSources;
@@ -236,7 +172,6 @@ export async function getPersonalizationData(request: any, authState: any, htmlC
         commands: [],
         prefix: locale.prefix?.split('/')[1]?.toLowerCase() || 'us'
       },
-      // placeholders: mainPagePlaceholders,// Start with main page placeholders
       placeholders: [], 
       locale: locale,
       env: { name: env }
@@ -245,92 +180,46 @@ export async function getPersonalizationData(request: any, authState: any, htmlC
     // Process each manifest source (like client-side getManifestConfig)
     for (let i = 0; i < experiments.length; i += 1) {
       const manifestSource = experiments[i];
-      // logger.log(`🔍 Processing manifest ${i + 1}/${experiments.length}: ${manifestSource.manifestPath}`);
       
       // Get manifest config (like client-side getManifestConfig)
       const experiment = await getManifestConfig(manifestSource, false, request);
       if (experiment) {
-        // logger.log(`✅ Manifest processed successfully: ${manifestSource.manifestPath}`);
         experiments[i] = experiment;
       } else {
         logger.log(`❌ Failed to process manifest: ${manifestSource.manifestPath}`);
         experiments[i] = null;
       }
     }
-    // logger.log(`Experiments: ${JSON.stringify(experiments)}`);
     
     // Clean and sort manifest list (like client-side cleanAndSortManifestList)
-    // logger.log(`About to process ${experiments.length} experiments through cleanAndSortManifestList`);
-    // logger.log(`First experiment structure: ${JSON.stringify(experiments[0])}`);
     experiments = cleanAndSortManifestList(experiments, config);
     
-    // logger.log(`🏆 After sorting/cleaning - ${experiments.length} manifests remain:`);
-    experiments.forEach((exp, index) => {
-      // logger.log(`🏆 ${index + 1}. ${exp.manifestPath} (priority: ${exp.priority || 'N/A'}, executionOrder: ${exp.executionOrder || 'N/A'})`);
-    });
-    
     if (experiments.length > 0) {
-      // logger.log(`🏆 WINNER: ${experiments[0].manifestPath} will take over the marquee`);
+      // Winner found
     }
     
     // Parse nested placeholders (like client-side parseNestedPlaceholders)
     parseNestedPlaceholders(config);
-    // logger.log(`Placeholders: ${JSON.stringify(config.placeholders)}`);
-    // logger.log(`Processed ${experiments.length} experiments, sorted by execution order`);
     
     // Categorize actions (like client-side categorizeActions)
     let results = [];
     for (const experiment of experiments) {
-      // Debug: Check experiment structure
-      // if (experiment.manifestPath && experiment.manifestPath.includes('target-')) {
-      //   logger.log(`Processing target variant experiment:`, JSON.stringify({
-      //     manifestPath: experiment.manifestPath,
-      //     selectedVariantName: experiment.selectedVariantName,
-      //     hasSelectedVariant: !!experiment.selectedVariant,
-      //     selectedVariantType: typeof experiment.selectedVariant
-      //   }));
-      // }
-      
       const result = await categorizeActions(experiment, config);
-      
-      // // Debug: Check what categorizeActions returns for target variants
-      // if (experiment.manifestPath && experiment.manifestPath.includes('target-')) {
-      //   logger.log(`categorizeActions result for target variant:`, JSON.stringify(result));
-      // }
       
       if (result) results.push(result);
     }
     results = results.filter(Boolean);
-    // logger.log(`Results: ${JSON.stringify(results)}`);
     
     // Store experiments (like client-side)
     config.mep.experiments = [...config.mep.experiments, ...experiments];
-    // logger.log(`Experiments: ${JSON.stringify(config.mep.experiments)}`);
     
     // Consolidate all actions (like client-side consolidateObjects and consolidateArray)
     config.mep.blocks = consolidateObjects(results, 'blocks', config.mep.blocks);
     config.mep.fragments = consolidateObjects(results, 'fragments', config.mep.fragments);
-    // logger.log(`Fragments: ${JSON.stringify(config.mep.fragments[])}`);
-    
-    // Debug: Check what's in results before consolidation
-    // logger.log(`Results before consolidation:`, JSON.stringify(results.map(r => ({ 
-    //   hasCommands: !!r.commands, 
-    //   commandCount: r.commands?.length || 0,
-    //   commands: r.commands?.map(c => ({ 
-    //     targetManifestId: c.targetManifestId,
-    //   }))
-    // }))));
     
     config.mep.commands = consolidateArray(results, 'commands', config.mep.commands);
-    // Handle commands (like client-side handleCommands) - this processes both commands AND fragments together
-    // config.mep.commands = handleCommands(config.mep.commands, config);
-    // logger.log(`config.mep.commands:`, JSON.stringify(config.mep.commands));
     
     const endTime = Date.now();
-    // logger.log(`Unified personalization data processing completed in ${endTime - startTime}ms`);
-    // logger.log(`Found ${config.mep.fragments.length} fragments and ${config.mep.commands.length} commands`);
-    
-    // logger.log(`Final placeholders being returned: ${JSON.stringify(config.placeholders)}`);
     
     return {
       fragments: config.mep.fragments,
@@ -345,7 +234,7 @@ export async function getPersonalizationData(request: any, authState: any, htmlC
 }
 
 // Check page filter against actual request path
-function checkPageFilter(pageFilter: string, request: any): boolean {
+function checkPageFilter(pageFilter, request) {
   if (!pageFilter) return true;
   
   // Get the actual path from request
@@ -356,7 +245,7 @@ function checkPageFilter(pageFilter: string, request: any): boolean {
 }
 
 // KEEPING YOUR COMPLETE TARGET API REQUEST BODY
-async function fetchPersonalizationData(request: any, authState: any) {
+async function fetchPersonalizationData(request, authState) {
   // Use proper Akamai EdgeWorker request properties
   const scheme = request.scheme; // 'http' or 'https'
   const host = request.host;     // e.g., 'www.stage.adobe.com'
@@ -381,11 +270,11 @@ async function fetchPersonalizationData(request: any, authState: any) {
     hostname: hostname,
     pathname: pathname,
     searchParams: {
-      get: (param: string) => {
+      get: (param) => {
         if (!query) return null;
         
         // Manual URLSearchParams implementation for Akamai EdgeWorkers
-        const params: Record<string, string> = {};
+        const params = {};
         query.split('&').forEach(pair => {
           const [key, value] = pair.split('=');
           if (key) {
@@ -463,14 +352,6 @@ async function fetchPersonalizationData(request: any, authState: any) {
     authState,
   });
 
-  // Log the request payload for debugging
-  ////logger.log("=== ADOBE TARGET REQUEST ===");
-  ////logger.log("URL:", `${TARGET_API_URL}?dataStreamId=${DATA_STREAM_ID}&requestId=${generateUUIDv4()}`);
-  ////logger.log("Environment:", env);
-  ////logger.log("Data Stream ID:", DATA_STREAM_ID);
-  ////logger.log("Request Payload:", JSON.stringify(requestBody, null, 2));
-  ////logger.log("=== END REQUEST ===");
-
   // Make the request to Adobe Target using httpRequest instead of fetch
   const targetResp = await httpRequest(`${TARGET_API_URL}?dataStreamId=${DATA_STREAM_ID}&requestId=${generateUUIDv4()}`, {
     method: "POST",
@@ -480,22 +361,7 @@ async function fetchPersonalizationData(request: any, authState: any) {
     body: JSON.stringify(requestBody)
   });
 
-  // Log the response for debugging
-  // logger.log("=== ADOBE TARGET RESPONSE ===");
-  // logger.log("Status:", targetResp.status);
-  // logger.log("Status Text:", targetResp.statusText);
-  // logger.log("Headers:", JSON.stringify(targetResp.getHeaders(), null, 2));
-
-  // if (targetResp.status !== 200) {
-  //   logger.error("Target API Error Status:", targetResp.status);
-  //   const errorText = await targetResp.text();
-  //   logger.error("Error Response Body:", errorText);
-  //   throw new Error(`Failed to fetch interact call: ${targetResp.status} - ${errorText}`);
-  // }
-
   const responseData = await targetResp.json();
-  // logger.log("Response Data:", JSON.stringify(responseData, null, 2));
-  ////logger.log("=== END RESPONSE ===");
 
   return responseData;
 }
@@ -638,36 +504,7 @@ function createRequestPayload({ updatedContext, pageName, locale, env, url, requ
   };
 }
 
-// function getTargetPropertyBasedOnPageRegion({ env, pathname }) {
-//   if (env !== 'prod') return 'bc8dfa27-29cc-625c-22ea-f7ccebfc6231';
-
-//   // EMEA & LATAM
-//   if (
-//     pathname.search(
-//       /(\/africa\/|\/be_en\/|\/be_fr\/|\/be_nl\/|\/cis_en\/|\/cy_en\/|\/dk\/|\/de\/|\/ee\/|\/es\/|\/fr\/|\/gr_en\/|\/ie\/|\/il_en\/|\/it\/|\/lv\/|\/lu_de\/|\/lu_en\/|\/lu_fr\/|\/hu\/|\/mt\/|\/mena_en\/|\/nl\/|\/no\/|\/pl\/|\/pt\/|\/ro\/|\/ch_de\/|\/si\/|\/sk\/|\/ch_fr\/|\/fi\/|\/se\/|\/ch_it\/|\/tr\/|\/uk\/|\/at\/|\/cz\/|\/bg\/|\/ru\/|\/cis_ru\/|\/ua\/|\/il_he\/|\/mena_ar\/|\/lt\/|\/sa_en\/|\/ae_en\/|\/ae_ar\/|\/sa_ar\/|\/ng\/|\/za\/|\/qa_ar\/|\/eg_en\/|\/eg_ar\/|\/kw_ar\/|\/eg_ar\/|\/qa_en\/|\/kw_en\/|\/gr_el\/|\/br\/|\/cl\/|\/la\/|\/mx\/|\/co\/|\/ar\/|\/pe\/|\/gt\/|\/pr\/|\/ec\/|\/cr\/)/,
-//     ) !== -1
-//   ) {
-//     return '488edf5f-3cbe-f410-0953-8c0c5c323772';
-//   }
-  
-//   // APAC
-//   if (
-//     pathname.search(
-//       /(\/au\/|\/hk_en\/|\/in\/|\/nz\/|\/sea\/|\/cn\/|\/hk_zh\/|\/tw\/|\/kr\/|\/sg\/|\/th_en\/|\/th_th\/|\/my_en\/|\/my_ms\/|\/ph_en\/|\/ph_fil\/|\/vn_en\/|\/vn_vi\/|\/in_hi\/|\/id_id\/|\/id_en\/)/,
-//     ) !== -1
-//   ) {
-//     return '3de509ee-bbc7-58a3-0851-600d1c2e2918';
-//   }
-  
-//   // JP
-//   if (pathname.indexOf('/jp/') !== -1) {
-//     return 'ba5bc9e8-8fb4-037a-12c8-682384720007';
-//   }
-
-//   return '4db35ee5-63ad-59f6-cec6-82ef8863b22d'; // Default
-// }
-
-function getOrGenerateUserId(cookies: Record<string, string>): any {
+function getOrGenerateUserId(cookies) {
   const amcvCookieValue = cookies[AMCV_COOKIE];
 
   // If ECID is not found, generate and return FPID
@@ -700,9 +537,9 @@ function generateUUIDv4() {
   });
 }
 
-function parseRawData(targetData: any): ProcessedData {
+function parseRawData(targetData) {
   // Extract personalization decisions
-  const propositions = targetData?.handle?.find((d: any) => d.type === "personalization:decisions")?.payload || [];
+  const propositions = targetData?.handle?.find((d) => d.type === "personalization:decisions")?.payload || [];
 
   if (propositions.length === 0) {
     return { fragments: [], commands: [], placeholders: {} };
@@ -711,18 +548,18 @@ function parseRawData(targetData: any): ProcessedData {
   logger.log(`Found ${propositions.length} propositions`);
 
   // Process propositions to extract fragments and commands
-  const fragments: ProcessedData['fragments'] = [];
-  const commands: ProcessedData['commands'] = [];
-  const placeholders: Record<string, string> = {};
+  const fragments = [];
+  const commands = [];
+  const placeholders = {};
 
-  propositions.forEach((proposition: any) => {
-    proposition.items?.forEach((item: any) => {
+  propositions.forEach((proposition) => {
+    proposition.items?.forEach((item) => {
       if (item.data?.format === "application/json") {
         const content = item.data.content;
         if (content?.manifestContent) {
           const experiences = content.manifestContent?.experiences?.data || content.manifestContent?.data || [];
 
-          experiences.forEach((experience: any) => {
+          experiences.forEach((experience) => {
             const action = experience.action
               ?.toLowerCase()
               .replace("content", "")
@@ -731,12 +568,12 @@ function parseRawData(targetData: any): ProcessedData {
 
             const selector = experience.selector;
             const variantNames = Object.keys(experience).filter(
-              (key: string) => !["action", "selector", "pagefilter", "page filter", "page filter optional"].includes(
+              (key) => !["action", "selector", "pagefilter", "page filter", "page filter optional"].includes(
                 key.toLowerCase()
               )
             );
 
-            variantNames.forEach((variant: string) => {
+            variantNames.forEach((variant) => {
               if (!experience[variant] || experience[variant].toLowerCase() === "false") return;
 
               if (getSelectorType(selector) === "fragment") {
@@ -767,7 +604,7 @@ function parseRawData(targetData: any): ProcessedData {
   return { fragments, commands, placeholders };
 }
 
-export function getEntitlementCreativeCloud(profile: any, scope: string): string {
+export function getEntitlementCreativeCloud(profile, scope) {
   if (
     scope
     && scope.indexOf('creative_cloud') !== -1
@@ -775,7 +612,7 @@ export function getEntitlementCreativeCloud(profile: any, scope: string): string
     && profile.serviceAccounts
   ) {
     const serviceAccount = profile.serviceAccounts.find(
-      (sa: any) => sa.serviceCode === 'creative_cloud',
+      (sa) => sa.serviceCode === 'creative_cloud',
     );
 
     if (!serviceAccount) {
@@ -792,7 +629,7 @@ export function getEntitlementCreativeCloud(profile: any, scope: string): string
   return 'notEntitled';
 }
 
-export function getEntitlementStatusCreativeCloud(profile: any, scope: string): string {
+export function getEntitlementStatusCreativeCloud(profile, scope) {
   if (
     scope
     && scope.indexOf('creative_cloud') !== -1
@@ -800,7 +637,7 @@ export function getEntitlementStatusCreativeCloud(profile: any, scope: string): 
     && profile.serviceAccounts
   ) {
     const serviceAccount = profile.serviceAccounts.find(
-      (sa: any) => sa.serviceCode === 'creative_cloud',
+      (sa) => sa.serviceCode === 'creative_cloud',
     );
     return serviceAccount?.serviceStatus || 'none';
   }
@@ -811,7 +648,7 @@ export function getEntitlementStatusCreativeCloud(profile: any, scope: string): 
 export { handleAlloyResponse, fetchPersonalizationData };
 
 // Consolidate objects (like client-side consolidateObjects)
-function consolidateObjects(results: any[], key: string, existing: any[] = []): any[] {
+function consolidateObjects(results, key, existing = []) {
   const consolidated = [...existing];
   
   results.forEach(result => {
@@ -824,7 +661,7 @@ function consolidateObjects(results: any[], key: string, existing: any[] = []): 
 }
 
 // Consolidate arrays (like client-side consolidateArray)
-function consolidateArray(results: any[], key: string, existing: any[] = []): any[] {
+function consolidateArray(results, key, existing = []) {
   const consolidated = [...existing];
   
   results.forEach(result => {
@@ -837,7 +674,7 @@ function consolidateArray(results: any[], key: string, existing: any[] = []): an
 }
 
 // Handle commands (like client-side handleCommands) - this processes both commands AND fragments together
-function handleCommands(commands: any[], config: any): any[] {
+function handleCommands(commands, config) {
   if (!commands?.length) return commands;
   
   // Like client-side, we need to process commands that may contain fragment content
@@ -877,19 +714,14 @@ function handleCommands(commands: any[], config: any): any[] {
 }
 
 // Parse placeholders (like client-side parsePlaceholders)
-function parsePlaceholders(placeholderData: any, config: any, variantName: string) {
-  // logger.log(`parsePlaceholders called with: variantName=${variantName}, placeholderData=${JSON.stringify(placeholderData)}`);
-  
+function parsePlaceholders(placeholderData, config, variantName) {
   if (!placeholderData?.length || variantName === 'default') {
-    // logger.log(`Skipping placeholder processing: no data or default variant`);
     return config;
   }
   
   // Get locale and MEP info from config (like client-side)
   const { countryIP, countryChoice } = config.mep || {};
   const locale = config.locale || {};
-  
-  // logger.log(`Locale info: ${JSON.stringify(locale)}`);
   
   // Build value names array (like client-side)
   const valueNames = [
@@ -904,11 +736,8 @@ function parsePlaceholders(placeholderData: any, config: any, variantName: strin
     'other',
   ];
   
-  // logger.log(`Value names array: ${JSON.stringify(valueNames)}`);
-  
   // Find the matching key (like client-side)
   const keys = placeholderData?.length ? Object.entries(placeholderData[0]) : [];
-  // logger.log(`Available keys: ${JSON.stringify(keys.map(([k]) => k))}`);
   
   const keyVal = keys.find(([key]) => {
     const modifiedStr = key.toLowerCase();
@@ -916,24 +745,15 @@ function parsePlaceholders(placeholderData: any, config: any, variantName: strin
   });
   const key = keyVal?.[0];
 
-  // logger.log(`Selected key: ${key}`);
-
   if (key) {
     // Build results object (like client-side)
-    const results = placeholderData.reduce((res: any, item: any) => {
+    const results = placeholderData.reduce((res, item) => {
       res[item.key] = item[key];
       return res;
     }, {});
     
-    // logger.log(`Built results: ${JSON.stringify(results)}`);
-    
     // Store in config (like client-side)
     config.placeholders = { ...(config.placeholders || {}), ...results };
-    
-    // logger.log(`Final config.placeholders: ${JSON.stringify(config.placeholders)}`);
-    
-    // Create martech metadata (like client-side)
-    // createMartechMetadata(placeholderData, config, key);
   } else {
     logger.log(`No matching key found for placeholder processing`);
   }
@@ -942,7 +762,7 @@ function parsePlaceholders(placeholderData: any, config: any, variantName: strin
 }
 
 // Helper function for country matching (like client-side hasCountryMatch)
-function hasCountryMatch(str: string, config: any): boolean {
+function hasCountryMatch(str, config) {
   if (str.includes('countrychoice') || str.includes('countryip')) {
     const modifiedStr = str.replace('uk', 'gb');
     return matchesCountryChoiceOrIP(modifiedStr, config);
@@ -951,7 +771,7 @@ function hasCountryMatch(str: string, config: any): boolean {
 }
 
 // Helper function for country choice/IP matching (like client-side matchesCountryChoiceOrIP)
-function matchesCountryChoiceOrIP(name: string, config: any): boolean {
+function matchesCountryChoiceOrIP(name, config) {
   if (!name.includes('countrychoice') && !name.includes('countryip')) return false;
   const countryList = name.match(/\(([^)]+)\)/)?.[1]?.split(',').map((c) => c.trim());
   if (!countryList?.length) return false;
@@ -960,44 +780,14 @@ function matchesCountryChoiceOrIP(name: string, config: any): boolean {
   return countryList.includes(testCountry);
 }
 
-// Create martech metadata (like client-side createMartechMetadata)
-// function createMartechMetadata(placeholders: any, config: any, column: string) {
-//   if (config.locale?.ietf === 'en-US') return;
-  
-//   // For server-side, we'll log the metadata creation but not implement the full client-side logic
-//   // since it involves client-specific imports and window objects
-//   logger.log(`🔍 Martech metadata creation for column: ${column}`);
-//   logger.log(`🔍 Placeholders data: ${JSON.stringify(placeholders)}`);
-  
-//   // Initialize analyticLocalization if not exists (like client-side)
-//   if (!config.mep) config.mep = {};
-//   config.mep.analyticLocalization = config.mep.analyticLocalization || {};
-  
-//   // Process placeholders for analytics (simplified server-side version)
-//   placeholders.forEach((item: any, i: number) => {
-//     const firstRow = placeholders[i];
-//     let usValue = firstRow['en-us'] || firstRow.us || firstRow.en || firstRow.key;
-    
-//     if (!usValue) return;
-    
-//     // For server-side, we'll store the mapping but not process tracking labels
-//     const translatedValue = item[column];
-//     if (translatedValue) {
-//       config.mep.analyticLocalization[translatedValue] = usValue;
-//     }
-//   });
-
-//   logger.log(`🔍 Analytic localization: ${JSON.stringify(config.mep.analyticLocalization)}`);
-// }
-
 // Set metadata function (like client-side setMetadata)
-function setMetadata(metadata: any) {
+function setMetadata(metadata) {
   // For server-side, we might want to log or handle metadata differently
   logger.log(`Metadata to update: ${JSON.stringify(metadata)}`);
 }
 
 // Parse MEP parameter (like client-side parseMepParam)
-function parseMepParam(mepParam: string) {
+function parseMepParam(mepParam) {
   if (!mepParam) return false;
   const mepObject = Object.create(null);
   const decodedParam = decodeURIComponent(mepParam);
@@ -1012,13 +802,13 @@ function parseMepParam(mepParam: string) {
 }
 
 // Compare execution order (like client-side compareExecutionOrder)
-function compareExecutionOrder(a: any, b: any): number {
+function compareExecutionOrder(a, b) {
   if (a.executionOrder === b.executionOrder) return 0;
   return a.executionOrder > b.executionOrder ? 1 : -1;
 }
 
 // Normalize fragment paths (like client-side normalizeFragPaths)
-function normalizeFragPaths({ selector, val, action, manifestId, manifestPath, targetManifestId }: any) {
+function normalizeFragPaths({ selector, val, action, manifestId, manifestPath, targetManifestId }) {
   return {
     selector: normalizePath(selector),
     val: normalizePath(val),
@@ -1030,17 +820,10 @@ function normalizeFragPaths({ selector, val, action, manifestId, manifestPath, t
 }
 
 // Categorize actions (like client-side categorizeActions)
-async function categorizeActions(experiment: any, config: any): Promise<any> {
+async function categorizeActions(experiment, config) {
   if (!experiment) return null;
   
   const { manifestPath, selectedVariant } = experiment;
-  
-  // Debug: Check if this is a target variant experiment
-  if (manifestPath && manifestPath.includes('target-')) {
-    logger.log(`categorizeActions: Processing target variant experiment for ${manifestPath}`);
-    logger.log(`categorizeActions: selectedVariant:`, JSON.stringify(selectedVariant));
-    logger.log(`categorizeActions: selectedVariant.commands:`, JSON.stringify(selectedVariant?.commands));
-  }
   
   if (!selectedVariant || selectedVariant === 'default') return { experiment };
 
@@ -1051,12 +834,12 @@ async function categorizeActions(experiment: any, config: any): Promise<any> {
   }
 
   // Handle insertscript (like client-side)
-  selectedVariant.insertscript?.map((script: any) => {
+  selectedVariant.insertscript?.map((script) => {
     logger.log(`Script to load: ${script.val}`);
   });
 
   // Handle updatemetadata (like client-side)
-  selectedVariant.updatemetadata?.map((metadata: any) => setMetadata(metadata));
+  selectedVariant.updatemetadata?.map((metadata) => setMetadata(metadata));
 
   // Normalize fragment paths (like client-side)
   selectedVariant.fragments &&= selectedVariant.fragments.map(normalizeFragPaths);
@@ -1071,7 +854,7 @@ async function categorizeActions(experiment: any, config: any): Promise<any> {
 }
 
 // Get manifest config (exactly like client-side getManifestConfig)
-async function getManifestConfig(info: any = {}, variantOverride: boolean = false, request?: any): Promise<any> {
+async function getManifestConfig(info = {}, variantOverride = false, request) {
   const {
     name,
     manifestData,
@@ -1100,7 +883,7 @@ async function getManifestConfig(info: any = {}, variantOverride: boolean = fals
   if (!persData) return null;
   
   const infoTab = manifestInfo || data?.info?.data;
-  const infoObj = infoTab?.reduce((acc: any, item: any) => {
+  const infoObj = infoTab?.reduce((acc, item) => {
     acc[item.key] = item.value;
     return acc;
   }, {});
@@ -1133,9 +916,9 @@ async function getManifestConfig(info: any = {}, variantOverride: boolean = fals
     };
     
     Object.keys(infoObj).forEach((key) => {
-      if (!infoKeyMap[key as keyof typeof infoKeyMap]) return;
-      const index = infoKeyMap[key as keyof typeof infoKeyMap].indexOf(infoObj[key]);
-      executionOrder[key as keyof typeof executionOrder] = index > -1 ? index : 1;
+      if (!infoKeyMap[key]) return;
+      const index = infoKeyMap[key].indexOf(infoObj[key]);
+      executionOrder[key] = index > -1 ? index : 1;
     });
     
     manifestConfig.executionOrder = `${executionOrder['manifest-execution-order']}-${executionOrder['manifest-type']}`;
@@ -1164,7 +947,7 @@ async function getManifestConfig(info: any = {}, variantOverride: boolean = fals
 }
 
 // Create default experiment (exactly like client-side createDefaultExperiment)
-function createDefaultExperiment(manifest: any) {
+function createDefaultExperiment(manifest) {
   return {
     disabled: manifest.disabled,
     event: manifest.event,
@@ -1179,10 +962,8 @@ function createDefaultExperiment(manifest: any) {
 }
 
 // Clean and sort manifest list (like client-side cleanAndSortManifestList)
-function cleanAndSortManifestList(manifests: any[], config: any): any[] {
-  // logger.log(`🔄 Starting cleanAndSortManifestList with ${manifests.length} manifests`);
-  
-  const manifestObj: Record<string, any> = {};
+function cleanAndSortManifestList(manifests, config) {
+  const manifestObj = {};
   let allManifests = manifests;
   let targetManifestWinsOverServerManifest = false;
   
@@ -1245,34 +1026,19 @@ function cleanAndSortManifestList(manifests: any[], config: any): any[] {
 
       // Set selected variant (like client-side)
       if (selectedVariantName && variantNames?.includes(selectedVariantName)) {
-        // Debug: Always log the selectedVariantName and variantNames for debugging
-        // logger.log(`Setting selectedVariant: selectedVariantName="${selectedVariantName}", variantNames=[${variantNames.join(',')}]`);
-        
-        // Debug: Check what's in the variants object for target variants
-        if (selectedVariantName.includes('target-')) {
-          // logger.log(`Target variant ${selectedVariantName} variants object:`, JSON.stringify(manifestConfig.variants[selectedVariantName]));
-        }
-        
         manifestConfig.selectedVariant = manifestConfig.variants[selectedVariantName];
-        
-        // Debug: Check what's in selectedVariant.commands after assignment
-        if (selectedVariantName.includes('target-')) {
-          // logger.log(`Target variant ${selectedVariantName} selectedVariant.commands:`, JSON.stringify(manifestConfig.selectedVariant?.commands));
-        }
       } else {
-        // logger.log(`Falling back to default: selectedVariantName="${selectedVariantName}", variantNames=[${variantNames?.join(',') || 'undefined'}]`);
         manifestConfig.selectedVariantName = 'default';
         manifestConfig.selectedVariant = 'default';
       }
       
       // Parse placeholders (like client-side)
       parsePlaceholders(placeholderData, config, manifestConfig.selectedVariantName);
-      // logger.log(`Placeholders: ${JSON.stringify(config.placeholders)}`);
     } catch (e) {
       logger.log(`Error processing manifest: ${e}`);
     }
   });
-  // logger.log(`Placeholders: ${JSON.stringify(config.placeholders)}`);
+  
   // Remove variants from final objects (like client-side)
   Object.keys(manifestObj).forEach((key) => {
     delete manifestObj[key].variants;
@@ -1281,33 +1047,11 @@ function cleanAndSortManifestList(manifests: any[], config: any): any[] {
   // Sort by execution order (like client-side)
   const sortedManifests = Object.values(manifestObj).sort(compareExecutionOrder);
   
-  // logger.log(`🏆 Final sorted order after cleanAndSortManifestList:`);
-  sortedManifests.forEach((manifest, index) => {
-    // logger.log(`🏆 ${index + 1}. ${manifest.manifestPath} (priority: ${manifest.priority || 0}, executionOrder: ${manifest.executionOrder || 0})`);
-  });
-  
-  if (sortedManifests.length > 0) {
-    // logger.log(`🏆 WINNER: ${sortedManifests[0].manifestPath} will take over the marquee`);
-    
-    // Track winner fragment processing
-    const winner = sortedManifests[0];
-    // logger.log(`🔍 Winner fragment count: ${winner.selectedVariant?.fragments?.length || 0}`);
-    
-    if (winner.selectedVariant?.fragments?.length > 0) {
-      winner.selectedVariant.fragments.forEach((frag, index) => {
-        // logger.log(`🔍 Winner fragment ${index + 1}: ${frag.selector} -> ${frag.val}`);
-      });
-    }
-    
-    // logger.log(`🔍 Winner commands count: ${winner.selectedVariant?.commands?.length || 0}`);
-    // logger.log(`🔍 Winner placeholders: ${JSON.stringify(config.placeholders)}`);
-  }
-  
   return sortedManifests;
 }
 
 // Parse nested placeholders (like client-side parseNestedPlaceholders)
-function parseNestedPlaceholders(config: any) {
+function parseNestedPlaceholders(config) {
   if (!config.placeholders) return;
   
   Object.entries(config.placeholders).forEach(([key, value]) => {
@@ -1316,12 +1060,11 @@ function parseNestedPlaceholders(config: any) {
     }
   });
 }
+
 // Fetch manifest data (like client-side fetchData)
-async function fetchManifestData(manifestPath: string, request: any): Promise<any> {
+async function fetchManifestData(manifestPath, request) {
   try {
-    // logger.log(`🌐 HTTP request for: ${manifestPath}`);
     const normalizedPath = normalizePath(manifestPath, true, request);
-    // logger.log(`🔗 Normalized path: ${normalizedPath}`);
     
     const response = await httpRequest(normalizedPath, {
       headers: {
@@ -1335,8 +1078,6 @@ async function fetchManifestData(manifestPath: string, request: any): Promise<an
       return null;
     }
 
-    // logger.log(`✅ HTTP ${response.status} for: ${manifestPath}`);
-
     const contentType = response.getHeader('content-type');
     if (!contentType || !contentType.includes('application/json')) {
       logger.log(`❌ Invalid content-type: ${contentType} for: ${manifestPath}`);
@@ -1349,12 +1090,9 @@ async function fetchManifestData(manifestPath: string, request: any): Promise<an
       return null;
     }
 
-    // logger.log(`✅ JSON parsed successfully for: ${manifestPath}`);
     return manifestData;
   } catch (error) {
     logger.log(`❌ Exception fetching ${manifestPath}: ${error}`);
     return null;
   }
 }
-
-

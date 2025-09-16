@@ -1,44 +1,8 @@
-export type AuthState = LoggedIn | LoggedOut;
-
-type LoggedIn = {
-  type: "LoggedIn";
-  data: LoggedInData;
-};
-
-type LoggedOut = {
-  type: "LoggedOut";
-  data: LoggedOutData;
-};
-
-type LoggedInData = {
-  authState: 'authenticated';
-  entitlementCreativeCloud: 'notEntitled' | 'paid' | 'free';
-  entitlementStatusCreativeCloud: 'none' | ServiceStatus;
-  returningStatus: 'New' | 'Repeat';
-  profileID: string | 'unknown';
-  authID: string | 'unknown';
-  fullProfileID: string | 'unknown';
-  fullAuthID: string | 'unknown';
-  adobeIMSUserProfile: AdobeIMSUserProfile;
-};
-
-type ServiceStatus = unknown;
-
-type AdobeIMSUserProfile = {
-  account_type: string | 'unknown';
-  preferred_languages: string[] | null;
-  countryCode: string | 'unknown';
-  toua: string | 'unknown';
-  email: string[] | 'unknown'; 
-  first_name: string[] | 'unknown';
-  last_name: string[] | 'unknown';
-  phoneNumber: string[] | 'unknown';
-};
-
-type LoggedOutData = {
-  authState: 'loggedOut';
-  returningStatus: 'New' | 'Repeat';
-};
+/**
+ * Authentication state types:
+ * - LoggedIn: User is authenticated with profile data
+ * - LoggedOut: User is not authenticated
+ */
 
 const base = "https://adobeid-na1.services.adobe.com";
 
@@ -94,7 +58,7 @@ export const authenticate = async (request) => {
       fullAuthID: profile?.authId ?? "unknown",
       adobeIMSUserProfile,
     }
-  } as LoggedIn;
+  };
   */
 };
 

@@ -41,7 +41,7 @@ export const shouldPersonalize = (request) => {
     params["perf_test"] === "true";
 };
 
-export const determineLocale = (request, url?) => {
+export const determineLocale = (request, url) => {
   const acceptLanguage = request.getHeaders()["Accept-Language"] || "";
   const defaultLocale = { ietf: "en-US", language: "en", country: "US", prefix: "", region: "us" };
 
@@ -92,7 +92,7 @@ export const determineLocale = (request, url?) => {
   return defaultLocale;
 };
 
-function setCookie(domain: string, key: string, value: string, options: { expires?: Date | number } = {}) {
+function setCookie(domain, key, value, options = {}) {
   let expiresString = '';
   
   if (options.expires) {
@@ -125,7 +125,7 @@ export const getVisitorStatus = ({
   const currentTime = Date.now();
 
   const cookieHeader = request.getHeaders()["Cookie"] || "";
-  const cookies: Record<string, string> = {};
+  const cookies = {};
 
   cookieHeader.split(";").forEach((cookie) => {
     const parts = cookie.trim().split("=");
@@ -140,7 +140,7 @@ export const getVisitorStatus = ({
   let visitorStatus;
   let cookie;
 
-  const cookieAttributes: { expires: Date; domain?: string } = { 
+  const cookieAttributes = { 
     expires: new Date(currentTime + expiryDays * 24 * 60 * 60 * 1000) 
   };
 

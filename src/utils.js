@@ -1409,7 +1409,7 @@ export function loadMepAddons() {
   return promises;
 }
 
-const edgePers = getMepEnablement('edge-pers');
+export const edgePers = getMepEnablement('edge-pers');
 async function checkForPageMods() {
   const {
     mep: mepParam,

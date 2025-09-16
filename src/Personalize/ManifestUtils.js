@@ -1,7 +1,7 @@
 import { logger } from "log";
 
 // Simple URL parsing function for EdgeWorker environment
-function parseURL(urlString: string): { href: string; pathname: string; hash: string; search: string } | null {
+function parseURL(urlString) {
   try {
     // Simple regex-based URL parsing
     const urlRegex = /^(https?:\/\/[^\/]+)(\/[^#]*)?(#.*)?$/;
@@ -35,17 +35,17 @@ const MANIFEST_KEYS = [
 const PROMO_PARAM = 'promo';
 
 // Extract metadata from HTML content
-export function extractMetadata(htmlContent: string, key: string): string | null {
+export function extractMetadata(htmlContent, key) {
   const metaRegex = new RegExp(`<meta[^>]*(?:name|property)=["']${key}["'][^>]*content=["']([^"']*)["']`, 'i');
   const match = htmlContent.match(metaRegex);
   return match ? match[1] : null;
 }
 
 // Get MEP value with normalization
-export function getMepValue(val: string | null): string | boolean | null {
+export function getMepValue(val) {
   if (!val) return null;
   
-  const valMap: Record<string, string | boolean> = { 
+  const valMap = { 
     on: true, 
     off: false, 
     postLCP: 'postlcp' 
@@ -56,13 +56,13 @@ export function getMepValue(val: string | null): string | boolean | null {
 }
 
 // Get metadata value
-export function getMdValue(htmlContent: string, key: string): string | boolean | null {
+export function getMdValue(htmlContent, key) {
   const value = extractMetadata(htmlContent, key);
   return value ? getMepValue(value) : null;
 }
 
 // Get promo MEP enablement (similar to getPromoMepEnablement in utils.js)
-export function getPromoMepEnablement(htmlContent: string): Record<string, string> | null {
+export function getPromoMepEnablement(htmlContent) {
   const mds = [
     'apac_manifestnames',
     'emea_manifestnames',
@@ -71,7 +71,7 @@ export function getPromoMepEnablement(htmlContent: string): Record<string, strin
     'manifestnames',
   ];
   
-  const mdObject: Record<string, string> = {};
+  const mdObject = {};
   
   mds.forEach((key) => {
     const val = getMdValue(htmlContent, key);
@@ -85,11 +85,11 @@ export function getPromoMepEnablement(htmlContent: string): Record<string, strin
 
 // Get MEP enablement (similar to getMepEnablement in utils.js)
 export function getMepEnablement(
-  htmlContent: string, 
-  mdKey: string, 
-  queryParams: Record<string, string> = {}, 
-  paramKey?: string
-): string | boolean | Record<string, string> | null {
+  htmlContent, 
+  mdKey, 
+  queryParams = {}, 
+  paramKey
+) {
   const paramValue = queryParams[paramKey || mdKey];
   if (paramValue) return getMepValue(paramValue);
   
@@ -101,7 +101,7 @@ export function getMepEnablement(
 }
 
 // Parse manifest URLs from string
-export function parseManifestUrlAndAddSource(manifestString: string, source: string): Array<{ manifestPath: string; source: string[] }> {
+export function parseManifestUrlAndAddSource(manifestString, source) {
   if (!manifestString) return [];
   
   return manifestString.toLowerCase()
@@ -115,11 +115,11 @@ export function parseManifestUrlAndAddSource(manifestString: string, source: str
 
 // Combine MEP sources (similar to combineMepSources in personalization.js)
 export async function combineMepSources(
-  htmlContent: string,
-  queryParams: Record<string, string> = {},
-  locale?: any
-): Promise<Array<{ manifestPath: string; source: string[] }>> {
-  let persManifests: Array<{ manifestPath: string; source: string[] }> = [];
+  htmlContent,
+  queryParams = {},
+  locale
+) {
+  let persManifests = [];
 
   // Personalization manifests
   const persEnabled = getMepEnablement(htmlContent, 'personalization', queryParams);
@@ -169,7 +169,6 @@ export async function combineMepSources(
       }
     });
   }
-  // logger.log(`persManifests: ${JSON.stringify(persManifests)}`);
 
   return persManifests;
 }
@@ -182,10 +181,10 @@ const JP = ['jp'];
 const REGIONS = { APAC, EMEA, AMERICAS, JP };
 
 // GMT string to local date conversion
-const GMTStringToLocalDate = (gmtString: string): Date => new Date(`${gmtString}+00:00`);
+const GMTStringToLocalDate = (gmtString) => new Date(`${gmtString}+00:00`);
 
 // Check if promo is disabled based on event and search params
-export function isPromoDisabled(event: any, searchParams: Record<string, string>, locale: any): boolean {
+export function isPromoDisabled(event, searchParams, locale) {
   if (!event) return false;
   
   const localeCode = locale?.prefix?.substring(1) || 'us';
@@ -201,7 +200,7 @@ export function isPromoDisabled(event: any, searchParams: Record<string, string>
 }
 
 // Check if manifest is within locale
-const isManifestWithinLocale = (locales: string, locale: any): boolean => {
+const isManifestWithinLocale = (locales, locale) => {
   if (!locales) return true;
   const localeCode = locale?.prefix?.substring(1) || 'us';
   return locales.split(';').map((locale) => locale.trim()).includes(localeCode);
@@ -209,19 +208,17 @@ const isManifestWithinLocale = (locales: string, locale: any): boolean => {
 
 // Get regional promo manifests
 const getRegionalPromoManifests = (
-  manifestNames: string,
-  region: string | null,
-  searchParams: Record<string, string>,
-  htmlContent: string,
-  locale: any
-): Array<{ manifestPath: string; disabled: boolean; event: any; source: string[] }> => {
+  manifestNames,
+  region,
+  searchParams,
+  htmlContent,
+  locale
+) => {
   const attachedManifests = manifestNames
     ? manifestNames.split(',').map((manifest) => manifest?.trim())
     : [];
-  // logger.log(`attachedManifests: ${JSON.stringify(attachedManifests)}`);
 
   const schedule = extractMetadata(htmlContent, region ? `${region}_schedule` : 'schedule');
-  // logger.log(`schedule: ${JSON.stringify(schedule)}`);
   if (!schedule) {
     return [];
   }
@@ -240,7 +237,6 @@ const getRegionalPromoManifests = (
         };
         
         const disabled = isPromoDisabled(event, searchParams, locale);
-        // logger.log(`disabled: ${JSON.stringify(disabled)}`);
         
         // Return the same structure as original promo-utils.js
         return { manifestPath, disabled, event, source: ['promo'] };
@@ -252,16 +248,15 @@ const getRegionalPromoManifests = (
 
 // Main promo manifests function
 export async function getPromoManifests(
-  manifestNames: Record<string, string>, 
-  queryParams: Record<string, string>,
-  htmlContent: string,
-  locale: any
-): Promise<Array<{ manifestPath: string; disabled: boolean; event: any; source: string[] }>> {
+  manifestNames, 
+  queryParams,
+  htmlContent,
+  locale
+) {
   // Extract region code exactly like promo-utils.js
   const localeCode = locale?.prefix?.substring(1) || 'us';
   const regionCode = Object.keys(REGIONS)
-    .find((r) => REGIONS[r as keyof typeof REGIONS]?.includes(localeCode))?.toLowerCase() || null;
-  // logger.log(`regionCode: ${JSON.stringify(regionCode)}`);
+    .find((r) => REGIONS[r]?.includes(localeCode))?.toLowerCase() || null;
   
   // Get regional promo manifests
   const promoManifests = regionCode != null ? getRegionalPromoManifests(
@@ -271,7 +266,6 @@ export async function getPromoManifests(
     htmlContent,
     locale
   ) : [];
-  // logger.log(`promoManifests: ${JSON.stringify(promoManifests)}`);
   
   // Get global promo manifests
   const globalPromoManifests = getRegionalPromoManifests(
@@ -281,12 +275,11 @@ export async function getPromoManifests(
     htmlContent,
     locale
   );
-  // logger.log(`globalPromoManifests: ${JSON.stringify(globalPromoManifests)}`);
   return [...promoManifests, ...globalPromoManifests];
 }
 
 // Export environment detection function (from Personalize.ts)
-export function getEnvironment(url: string): string {
+export function getEnvironment(url) {
   return [
     "stage",
     "dev", 
@@ -298,7 +291,7 @@ export function getEnvironment(url: string): string {
 }
 
 // Normalize path function (mirrors client-side personalization.js exactly)
-export function normalizePath(path: string, localize: boolean = true, request?: any): string {
+export function normalizePath(path, localize = true, request) {
   if (!path) return path;
   // Handle DAM content paths
   if (path.includes('/content/dam/')) return path;
@@ -346,7 +339,7 @@ export function normalizePath(path: string, localize: boolean = true, request?: 
 }
 
 // Server-side config equivalent (replaces getConfig())
-function getServerConfig(request?: any): any {
+function getServerConfig(request) {
   // Determine locale from request using determineLocale function
   const locale = request ? determineLocale(request) : { ietf: 'en-US', prefix: '' };
   
@@ -369,7 +362,7 @@ function getServerConfig(request?: any): any {
 }
 
 // Federated URL handling (mirrors client-side getFederatedUrl)
-function getFederatedUrl(url: string, request?: any): string {
+function getFederatedUrl(url, request) {
   if (typeof url !== 'string' || !url.includes('/federal/')) return url;
   
   // For server-side, we need to determine the federated content root
@@ -382,7 +375,6 @@ function getFederatedUrl(url: string, request?: any): string {
   
   try {
     const parsedUrl = parseURL(url);
-    // if (!parsedUrl) return url;
     
     const { pathname, search, hash } = parsedUrl;
     return `${federatedContentRoot}${pathname}${search}${hash}`;
@@ -395,7 +387,7 @@ function getFederatedUrl(url: string, request?: any): string {
 }
 
 // Federated content root (server-side equivalent of utils.js getFederatedContentRoot)
-function getFederatedContentRoot(request?: any): string {
+function getFederatedContentRoot(request) {
   const cdnWhitelistedOrigins = [
     'https://www.adobe.com',
     'https://business.adobe.com',
@@ -427,7 +419,7 @@ function getFederatedContentRoot(request?: any): string {
 }
 
 // Determine locale from request
-export function determineLocale(request: any): { ietf: string; prefix: string; region: string } {
+export function determineLocale(request) {
   const acceptLanguage = request.getHeaders()["Accept-Language"] || "";
   const defaultLocale = { ietf: "en-US", language: "en", country: "US", prefix: "" };
 
@@ -465,10 +457,10 @@ export function determineLocale(request: any): { ietf: string; prefix: string; r
 }
 
 // Get file name from path (like client-side getFileName)
-export const getFileName = (path: string): string | undefined => path?.split('/').pop();
+export const getFileName = (path) => path?.split('/').pop();
 
 // Replace placeholders in content (exactly like client-side replaceText from placeholders.js)
-export function replacePlaceholders(value: string, ph?: any): string {
+export function replacePlaceholders(value, ph) {
   // Handle null/undefined values
   if (typeof value !== 'string' || !value.length) return value;
   

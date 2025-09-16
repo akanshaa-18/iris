@@ -1,5 +1,5 @@
 import { logger } from "log";
-import { normalizePath } from "./ManifestUtils";
+import { normalizePath } from "./ManifestUtils.js";
 
 // Constants (exactly like client-side)
 const TARGET_EXP_PREFIX = 'target-';
@@ -32,84 +32,6 @@ const GLOBAL_CMDS = [
   'useblockcode',
 ];
 
-// Types
-export interface Manifest {
-  type: 'personalization' | 'promo' | 'target';
-  variants: Record<string, Variant>;
-  variantNames: string[];
-  executionOrder: string;
-  manifestPath: string;
-  selectedVariantName: string;
-  selectedVariant: Variant;
-  manifestType: string;
-  analyticsTitle?: string;
-  placeholderData?: any[];
-  manifestOverrideName?: string;
-}
-
-export interface Variant {
-  commands: Command[];
-  fragments: Fragment[];
-  useblockcode?: BlockCode[];
-  updatemetadata?: Metadata[];
-  insertscript?: Script[];
-  replacepage?: ReplacePage[];
-}
-
-export interface Command {
-  action: string;
-  selector: string;
-  content: string;
-  manifestId?: string;
-  manifestPath?: string;
-  targetManifestId?: string;
-  modifiers?: string[];
-  attribute?: string;
-}
-
-export interface Fragment {
-  selector: string;
-  val: string;
-  action: string;
-  manifestId?: string;
-  manifestPath?: string;
-  targetManifestId?: string;
-}
-
-export interface BlockCode {
-  selector: string;
-  val: string;
-  pageFilter?: string;
-  manifestId?: string;
-  manifestPath?: string;
-  targetManifestId?: string;
-}
-
-export interface Metadata {
-  selector: string;
-  val: string;
-  pageFilter?: string;
-  manifestId?: string;
-  manifestPath?: string;
-  targetManifestId?: string;
-}
-
-export interface Script {
-  val: string;
-  pageFilter?: string;
-  manifestId?: string;
-  manifestPath?: string;
-  targetManifestId?: string;
-}
-
-export interface ReplacePage {
-  val: string;
-  pageFilter?: string;
-  manifestId?: string;
-  manifestPath?: string;
-  targetManifestId?: string;
-}
-
 // Personalization keys (exactly like client-side PERSONALIZATION_KEYS)
 const PERSONALIZATION_KEYS = [
   'all', 'chrome', 'firefox', 'safari', 'edge', 'android', 'ios', 'windows', 'mac',
@@ -117,7 +39,7 @@ const PERSONALIZATION_KEYS = [
 ];
 
 // Normalize manifest type to match union
-function normalizeManifestType(type: string): 'personalization' | 'promo' | 'test' {
+function normalizeManifestType(type) {
   const normalized = type?.toLowerCase().trim();
   
   switch (normalized) {
@@ -136,7 +58,7 @@ function normalizeManifestType(type: string): 'personalization' | 'promo' | 'tes
 }
 
 // Check page filter against actual request path
-function checkPageFilter(pageFilter: string, request: any): boolean {
+function checkPageFilter(pageFilter, request) {
   if (!pageFilter) return true;
   
   // Get the actual path from request
@@ -147,14 +69,14 @@ function checkPageFilter(pageFilter: string, request: any): boolean {
 }
 
 // Normalize keys (similar to normalizeKeys in personalization.js)
-function normalizeKeys(obj: any): any {
-  return Object.keys(obj).reduce((newObj: any, key: string) => {
+function normalizeKeys(obj) {
+  return Object.keys(obj).reduce((newObj, key) => {
     newObj[toLowerAlpha(key)] = obj[key];
     return newObj;
   }, {});
 }
 
-function toLowerAlpha(str: string): string {
+function toLowerAlpha(str) {
   const modifiedStr = str.toLowerCase();
   if (!modifiedStr.includes('countryip') && !modifiedStr.includes('countrychoice') && !modifiedStr.includes('previouspage')) {
     return modifiedStr.replace(/[^a-z0-9\- _,&=:]/g, '');
@@ -163,19 +85,18 @@ function toLowerAlpha(str: string): string {
 }
 
 // Match glob pattern (similar to matchGlob in personalization.js)
-export function matchGlob(searchStr: string, inputStr: string): boolean {
+export function matchGlob(searchStr, inputStr) {
   const pattern = searchStr.replace(/\*\*/g, '.*');
   const reg = new RegExp(`^${pattern}(\\.html)?$`, 'i');
   return reg.test(inputStr);
 }
 
 // Get variant info (exactly like client-side getVariantInfo)
-function getVariantInfo(line: any, variantNames: string[], variants: Record<string, Variant>, manifestPath: string, fTargetId?: string, request?: any): void {
+function getVariantInfo(line, variantNames, variants, manifestPath, fTargetId, request) {
   const config = { mep: { preview: false } }; // Simplified config like client-side
   let manifestId = getFileName(manifestPath);
   let targetId = manifestId ? manifestId.replace('.json', '') : '';
   if (fTargetId) targetId = fTargetId;
-  // if (!config.mep?.preview) manifestId = false;
   
   // retro support (like client-side)
   const action = line.action?.toLowerCase()
@@ -192,17 +113,12 @@ function getVariantInfo(line: any, variantNames: string[], variants: Record<stri
   // Check page filter (exactly like client-side)
   if (pageFilter && !matchGlob(pageFilter, request?.path || '/')) return;
 
-  // if (!config.mep?.preview) manifestId = false;
   const origin = 'https://example.com'; // Simplified for server-side
   
   variantNames.forEach((vn) => {
     const targetManifestId = vn.includes(TARGET_EXP_PREFIX) ? targetId : undefined;
+    
     if (!line[vn] || line[vn].toLowerCase() === 'false') return;
-
-    // Debug logging for target variants
-    if (vn.includes(TARGET_EXP_PREFIX)) {
-      // logger.log(`Processing target variant: ${vn}, targetId: ${targetId}, targetManifestId: ${targetManifestId}`);
-    }
 
     const variantInfo = {
       action,
@@ -225,11 +141,11 @@ function getVariantInfo(line: any, variantNames: string[], variants: Record<stri
         targetManifestId,
       });
     } else if (GLOBAL_CMDS.includes(action)) {
-      variants[vn][action as keyof Variant] = variants[vn][action as keyof Variant] || [];
+      variants[vn][action] = variants[vn][action] || [];
 
       if (action === 'useblockcode') {
         const { blockSelector, blockTarget } = getBlockProps(line[vn], config, origin);
-        (variants[vn].useblockcode as BlockCode[]).push({
+        variants[vn].useblockcode.push({
           selector: blockSelector,
           val: blockTarget,
           pageFilter,
@@ -238,7 +154,7 @@ function getVariantInfo(line: any, variantNames: string[], variants: Record<stri
           targetManifestId,
         });
       } else {
-        (variants[vn] as any)[action].push({
+        variants[vn][action].push({
           selector: normalizePath(selector, request),
           val: normalizePath(line[vn], request),
           pageFilter,
@@ -248,33 +164,22 @@ function getVariantInfo(line: any, variantNames: string[], variants: Record<stri
         });
       }
     } else if (action in COMMANDS_KEYS || action in CREATE_CMDS) {
-      // Debug logging for target variants
-      if (vn.includes(TARGET_EXP_PREFIX)) {
-        // logger.log(`Adding target variant command: ${vn}, action: ${action}, variantInfo:`, JSON.stringify(variantInfo));
-      }
-      
       variants[vn].commands.push(variantInfo);
-      
-      // Debug: Check if targetManifestId is preserved after adding
-      if (vn.includes(TARGET_EXP_PREFIX)) {
-        const lastCommand = variants[vn].commands[variants[vn].commands.length - 1];
-        // logger.log(`After adding command, targetManifestId in last command:`, lastCommand.targetManifestId);
-      }
     }
   });
 }
 
-function getFileName(path: string): string | undefined {
+function getFileName(path) {
   return path?.split('/').pop();
 }
 
-function getSelectorType(selector: string): string {
+function getSelectorType(selector) {
   const sel = selector.toLowerCase().trim();
   if (sel.startsWith('/') || sel.startsWith('http')) return 'fragment';
   return 'other';
 }
 
-function getBlockProps(fVal: string, config: any, origin: string): { blockSelector: string; blockTarget: string } {
+function getBlockProps(fVal, config, origin) {
   let val = fVal;
   if (val?.includes('\\')) val = val?.split('\\').join('/');
   if (!val?.startsWith('/')) val = `/${val}`;
@@ -290,16 +195,16 @@ function getBlockProps(fVal: string, config: any, origin: string): { blockSelect
 }
 
 // Parse manifest variants (exactly like client-side parseManifestVariants)
-export function parseManifestVariants(data: any[], manifestPath: string, targetId?: string, request?: any): Manifest | null {
+export function parseManifestVariants(data, manifestPath, targetId, request) {
   if (!data?.length) {
     return null;
   }
 
-  const manifestConfig: any = {};
+  const manifestConfig = {};
   const experiences = data.map((d) => normalizeKeys(d));
 
   try {
-    const variants: Record<string, Variant> = {};
+    const variants = {};
     const variantNames = Object.keys(experiences[0])
       .filter((vn) => !MANIFEST_KEYS.includes(vn));
 
@@ -313,11 +218,9 @@ export function parseManifestVariants(data: any[], manifestPath: string, targetI
 
     manifestConfig.variants = variants;
     manifestConfig.variantNames = variantNames;
-    // logger.log('VariantNames:', variantNames);
     
     // Set manifestId like client-side (based on config.mep?.preview)
     const config = { mep: { preview: false } }; // Simplified for server-side
-    // if (!config.mep?.preview) manifestConfig.manifestId = false;
 
     return manifestConfig;
   } catch (e) {
@@ -328,11 +231,11 @@ export function parseManifestVariants(data: any[], manifestPath: string, targetI
 
 // Get personalization variant (exactly like client-side getPersonalizationVariant)
 export async function getPersonalizationVariant(
-  manifestPath: string,
-  variantNames: string[] = [],
-  variantLabel: string | null = null,
-  request: any
-): Promise<string> {
+  manifestPath,
+  variantNames = [],
+  variantLabel = null,
+  request
+) {
   // Check for variant override (like client-side)
   const config = { mep: { variantOverride: {} } }; // Simplified for server-side
   if (config.mep?.variantOverride?.[manifestPath]) {
@@ -342,10 +245,10 @@ export async function getPersonalizationVariant(
   const variantInfo = buildVariantInfo(variantNames);
 
   // Handle entitlements (like client-side)
-  const entitlementKeys: string[] = []; // Simplified for server-side
+  const entitlementKeys = []; // Simplified for server-side
   const hasEntitlementTag = entitlementKeys.some((tag) => variantInfo.allNames.includes(tag));
 
-  let userEntitlements: string[] = [];
+  let userEntitlements = [];
   if (hasEntitlementTag) {
     if (config?.mep?.enablePersV2) {
       userEntitlements = [];
@@ -354,7 +257,7 @@ export async function getPersonalizationVariant(
     }
   }
 
-  const hasMatch = (name: string): boolean => {
+  const hasMatch = (name) => {
     if (!name) return true;
     if (name === variantLabel?.toLowerCase()) return true;
     if (name.startsWith('param-')) return checkForParamMatch(name, request);
@@ -366,7 +269,7 @@ export async function getPersonalizationVariant(
     return PERSONALIZATION_KEYS.includes(name) && checkPersonalizationTag(name, request);
   };
 
-  const matchVariant = (n: string): boolean => {
+  const matchVariant = (n) => {
     // split before checks (exactly like client-side)
     const name = n.includes(':') ? n.split(':')[1] : n;
     
@@ -390,8 +293,8 @@ export async function getPersonalizationVariant(
   return matchingVariant || 'default';
 }
 
-function buildVariantInfo(variantNames: string[]): Record<string, string[]> {
-  return variantNames.reduce((acc: any, name) => {
+function buildVariantInfo(variantNames) {
+  return variantNames.reduce((acc, name) => {
     let nameArr = [name];
     if (!name.startsWith(TARGET_EXP_PREFIX)) nameArr = name.split(/,(?![^(]*\))/);
     acc[name] = nameArr.map((v) => v.trim()).filter(Boolean);
@@ -400,7 +303,7 @@ function buildVariantInfo(variantNames: string[]): Record<string, string[]> {
   }, { allNames: [] });
 }
 
-function checkForParamMatch(paramStr: string, request: any): boolean {
+function checkForParamMatch(paramStr, request) {
   const [name, val] = paramStr.split('param-')[1].split('=');
   if (!name) return false;
   
@@ -415,7 +318,7 @@ function checkForParamMatch(paramStr: string, request: any): boolean {
   return false;
 }
 
-function checkForPreviousPageMatch(previousPageStr: string, request: any): boolean {
+function checkForPreviousPageMatch(previousPageStr, request) {
   const referer = request.getHeaders()['referer'] || '';
   if (!referer) return false;
   
@@ -423,13 +326,13 @@ function checkForPreviousPageMatch(previousPageStr: string, request: any): boole
   return matchGlob(previousPageString, new URL(referer).pathname);
 }
 
-function hasCountryMatch(name: string, request: any): boolean {
+function hasCountryMatch(name, request) {
   // Simplified country matching - you'll need to implement based on your geo detection
   return false;
 }
 
 // Check personalization tag (exactly like client-side hasMatch function)
-function checkPersonalizationTag(tag: string, request: any): boolean {
+function checkPersonalizationTag(tag, request) {
   if (!tag) return true;
   
   // Get user agent and other context from request (like client-side navigator.userAgent)
@@ -486,10 +389,10 @@ function checkPersonalizationTag(tag: string, request: any): boolean {
 
 // Parse manifest config (similar to getManifestConfig in personalization.js)
 export async function parseManifestConfig(
-  manifestData: any,
-  manifestPath: string,
-  request: any
-): Promise<Manifest | null> {
+  manifestData,
+  manifestPath,
+  request
+) {
   if (!manifestData) {
     logger.log('No manifestData provided for:', manifestPath);
     return null;
@@ -501,10 +404,8 @@ export async function parseManifestConfig(
     return null;
   }
 
-  // logger.log('Parsing manifest:', manifestPath, 'with persData length:', Array.isArray(persData) ? persData.length : 'not array');
-
   const infoTab = manifestData?.info?.data;
-  const infoObj = infoTab?.reduce((acc: any, item: any) => {
+  const infoObj = infoTab?.reduce((acc, item) => {
     acc[item.key] = item.value;
     return acc;
   }, {});
@@ -512,7 +413,6 @@ export async function parseManifestConfig(
   const manifestOverrideName = infoObj?.['manifest-override-name']?.toLowerCase();
   const targetId = manifestOverrideName;
   const manifestConfig = parseManifestVariants(persData, manifestPath, targetId, request);
-  // logger.log('manifestConfig result:', manifestConfig ? 'success' : 'null', 'for:', manifestPath);
 
   if (!manifestConfig) {
     logger.log('Error loading personalization manifestConfig: ', manifestPath);
@@ -539,9 +439,9 @@ export async function parseManifestConfig(
     };
 
     Object.keys(infoObj).forEach((key) => {
-      if (!infoKeyMap[key as keyof typeof infoKeyMap]) return;
-      const index = infoKeyMap[key as keyof typeof infoKeyMap].indexOf(infoObj[key]);
-      executionOrder[key as keyof typeof executionOrder] = index > -1 ? index : 1;
+      if (!infoKeyMap[key]) return;
+      const index = infoKeyMap[key].indexOf(infoObj[key]);
+      executionOrder[key] = index > -1 ? index : 1;
     });
 
     manifestConfig.executionOrder = `${executionOrder['manifest-execution-order']}-${executionOrder['manifest-type']}`;

@@ -4,7 +4,7 @@ import { httpRequest } from "http-request";
 import { logger } from "log";
 import { TextEncoder } from "encoding";
 import { ReadableStream } from "streams";
-import { normalizePath, replacePlaceholders } from "./ManifestUtils";
+import { normalizePath, replacePlaceholders } from "./ManifestUtils.js";
 
 const COMMANDS_KEYS = {
   remove: 'remove',
@@ -20,16 +20,10 @@ const CREATE_CMDS = {
 };
 
 // Rewrite HTML using buffered response (most efficient approach)
-export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, responseHeaders: any, status: number) => {
-  // logger.log("=== HTML REWRITING START (Buffered Mode) ===");
-  // logger.log("Processing data:", JSON.stringify({
-  //  fragmentsCount: data?.fragments?.length || 0,
-  //  commandsCount: data?.commands?.length || 0
-  // }));
-
+export const rewriteWithBufferedHtml = async (bufferedHtml, data, responseHeaders, status) => {
   // Transform commands for processing (like client-side handleCommands)
   const transformedData = await Promise.all(
-    data?.commands?.map(async (cmd: any) => {
+    data?.commands?.map(async (cmd) => {
       // Check if this is a fragment command (like client-side getSelectorType)
       const isFragmentContent = cmd.content && (cmd.content.startsWith('/') || cmd.content.startsWith('http'));
       
@@ -49,8 +43,6 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
     }) || []
   );
 
-  // logger.log("Transformed commands:", transformedData.length);
-
   const rewriter = new HtmlRewritingStream();
   
   // Add edge personalization meta tag
@@ -68,11 +60,8 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
   }
 
   // Process commands (like client-side handleCommands) - this handles both commands AND fragments together
-  // logger.log(`🔍 Starting to process ${transformedData.length} commands`);
-  
   for (const cmd of transformedData) {
     const { action, selector, content, attribute, type, path } = cmd;
-    // logger.log(`🔍 Processing command: action="${action}", selector="${selector}", content="${content}", type="${type}"`);
 
     // Skip commands that contain #modal-hash (modal-related commands)
     if (content && content.includes('#modal-hash')) {
@@ -82,26 +71,17 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
 
     // Handle fragment commands (like client-side getSelectedElements for fragments)
     if (type === "fragment") {
-      // logger.log(`Processing fragment command: selector="${selector}", action="${action}"`);
-      
       // Apply the same selector transformation as regular commands (like client-side modifyNonFragmentSelector)
       let { modifiedSelector, modifiers, attribute } = modifyNonFragmentSelector(selector, action);
-      // logger.log(`Fragment selector transformed from "${selector}" to "${modifiedSelector}"`);
       
       const fragmentHTML = await fetchFragmentContent(path);
-      // logger.log(`Fragment HTML fetched, length: ${fragmentHTML?.length || 0}`);
       if (!fragmentHTML) {
         logger.log(`No fragment HTML found for path: ${path}`);
         continue;
       }
 
-      // Process fragment synchronously by directly modifying the HTML content (like client-side)
-      // This ensures fragments are processed BEFORE HTML rewriting starts
-      // logger.log(`Processing fragment synchronously for selector: "${modifiedSelector}"`);
-      
       // Process fragment content like client-side: parse, extract sections, create fragment structure
       let processedFragmentHTML = await processFragmentContent(fragmentHTML, path, data?.placeholders || {});
-      // const fragmentWrapper = createFragmentWrapper(processedFragmentHTML, path, cmd.manifestId, cmd.targetManifestId);
       const fragmentWrapper = processedFragmentHTML;
       
       logger.log(`Final processed fragment content (first 1000 chars): ${processedFragmentHTML.substring(0, 1000)}...`);
@@ -116,76 +96,6 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
       continue;
     }
 
-    // Handle commands with fragment content (like client-side createContent for fragment content)
-    // if (hasFragmentContent) {
-    //   // logger.log(`🔍 Processing command with fragment content: selector="${selector}", content="${content}"`);
-      
-    //   // Final safety check before calling rewriter.onElement
-    //   if (selector.trim() === '') {
-    //     logger.log(`Final check: Skipping command with empty selector after processing`);
-    //     continue;
-    //   }
-
-    //   rewriter.onElement(selector, async (el) => {
-    //     if (action === "replace") {
-    //       const classAttr = el.getAttribute("class") || "";
-    //       if (!classAttr.split(/\s+/).includes("p13n-replaced")) {
-    //         // Apply placeholder replacement to content (like personalization.js)
-    //         const processedContent = replacePlaceholders(content, data?.placeholders || {});
-    //         logger.log(`Original content: "${content}"`);
-    //         logger.log(`Processed content: "${processedContent}"`);
-            
-    //         // Create content (like client-side createContent)
-    //         const newContent = await createFragmentContent(processedContent, el, data?.placeholders || {});
-            
-    //         // Use before() which IS supported in Akamai EdgeWorkers
-    //         el.before(newContent);
-    //         el.setAttribute("class", classAttr + " p13n-replaced");
-    //       }
-    //     }
-    //   });
-      
-    //   continue;
-    // }
-
-    // Handle regular commands (like client-side handleCommands for non-fragment content)
-    // Final safety check before calling rewriter.onElement
-    // if (selector.trim() === '') {
-    //   logger.log(`Final check: Skipping command with empty selector after processing`);
-    //   continue;
-    // }
-    // logger.log(`Selector: ${selector}`);
-
-    // rewriter.onElement(selector, async (el) => {
-    //   if (action === "remove") {
-    //     // Mark with p13n-deleted class (like personalization.js)
-    //     const classAttr = el.getAttribute("class") || "";
-    //     el.setAttribute("class", classAttr + " p13n-deleted");
-        
-    //     // Actually remove the element (Akamai-compatible)
-    //     el.replaceWith('');
-    //   } else if (action === "replace") {
-    //     // Match personalization.js: insert before instead of replace children
-    //     const classAttr = el.getAttribute("class") || "";
-    //     if (!classAttr.split(/\s+/).includes("p13n-replaced")) {
-    //       // Apply placeholder replacement to content (like personalization.js)
-    //       // const processedContent = replacePlaceholders(content, data?.placeholders || {});
-    //       logger.log(`Original content: "${content}"`);
-    //       logger.log(`Processed content: "${processedContent}"`);
-          
-    //       // Create content (like client-side createContent for non-fragment content)
-    //       const newContent = await createFragmentContent(processedContent, el, data?.placeholders || {});
-          
-    //       // Use before() which IS supported in Akamai EdgeWorkers
-    //       el.before(newContent);
-    //       el.setAttribute("class", classAttr + " p13n-replaced");
-    //     }
-    //   } else if (action === "updateAttribute" && attribute) {
-    //     // Apply placeholder replacement to attribute value
-    //     const processedContent = replacePlaceholders(content, {});
-    //     el.setAttribute(attribute, processedContent);
-    //   }
-    // });
     // Track if we've already processed the first element for this selector (like client-side behavior)
     let isFirstElement = true;
     
@@ -196,15 +106,12 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
       }
       isFirstElement = false;
       
-      // logger.log(`🔍 Processing element for selector: "${selector}", action: "${action}"`);
-      
       if (action === "remove") {
         // Handle remove action (like client-side COMMANDS.remove)
         const classAttr = el.getAttribute("class") || "";
         if (content !== 'false') {
           el.setAttribute("class", classAttr + " p13n-deleted");
         }
-        // logger.log(`✅ Remove action applied to selector: "${selector}"`);
         // Note: In Akamai HTML Rewriter, we can't remove elements directly
         // The p13n-deleted class will be used for styling/identification
         
@@ -212,7 +119,6 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
         // Handle replace action (like client-side COMMANDS.replace)
         const classAttr = el.getAttribute("class") || "";
         if (!classAttr.split(/\s+/).includes("p13n-replaced")) {
-          // logger.log(`Original content: "${content}"`);
           
           // Check if content is a fragment (like client-side createContent)
           const isFragment = content && (content.startsWith('/') || content.startsWith('http'));
@@ -225,12 +131,10 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
             
             // Insert BEFORE element (like client-side insertAdjacentElement('beforebegin'))
             el.before(newContentHTML);
-            // logger.log(`✅ Fragment replace action applied to selector: "${selector}"`);
           } else {
             // For non-fragments: replace content directly (like client-side innerHTML)
             const processedContent = replacePlaceholders(content, data?.placeholders || {});
             el.replaceChildren(processedContent);
-            // logger.log(`✅ Text replace action applied to selector: "${selector}"`);
           }
           
           el.setAttribute("class", classAttr + " p13n-replaced");
@@ -248,7 +152,7 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
         
       } else if (action in CREATE_CMDS) {
         // Handle CREATE_CMDS actions (like client-side CREATE_CMDS)
-        const insertPosition = CREATE_CMDS[action as keyof typeof CREATE_CMDS];
+        const insertPosition = CREATE_CMDS[action];
         const processedContent = replacePlaceholders(content, data?.placeholders || {});
         
         // Check if content is a fragment (like client-side createContent)
@@ -308,8 +212,6 @@ export const rewriteWithBufferedHtml = async (bufferedHtml: string, data: any, r
 };
 
 function modifyNonFragmentSelector(selector, action) {
-  // logger.log(`Modifying selector: "${selector}" for action: "${action}"`);
-  
   if (!selector || selector.trim() === '') {
     logger.log(`Empty selector detected in modifyNonFragmentSelector: "${selector}"`);
     return { modifiedSelector: '', modifiers: [], attribute: null };
@@ -325,8 +227,6 @@ function modifyNonFragmentSelector(selector, action) {
     .map(modifySelectorTerm)
     .join(' ')
     .trim();
-
-  // logger.log(`Modified selector result: "${modifiedSelector}"`);
 
   let attribute;
 
@@ -401,7 +301,7 @@ function getModifiers(selector) {
   return { sel, modifiers };
 }
 
-async function fetchFragmentContent(path: string): Promise<string | null> {
+async function fetchFragmentContent(path) {
   try {
     // Process path like client-side fragment.js
     let resourcePath = path;
@@ -425,8 +325,6 @@ async function fetchFragmentContent(path: string): Promise<string | null> {
     // Use normalizePath to handle localization and domain mapping
     const normalizedPath = normalizePath(plainPath, true);
     
-    // logger.log(`Fetching fragment content from: ${normalizedPath}`);
-    
     const response = await httpRequest(normalizedPath, {
       headers: {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -445,7 +343,6 @@ async function fetchFragmentContent(path: string): Promise<string | null> {
       return null;
     }
 
-    // logger.log(`Successfully fetched fragment content from ${normalizedPath}, length: ${fragmentContent.length}`);
     return fragmentContent;
   } catch (error) {
     logger.log(`Error fetching fragment ${path}: ${error}`);
@@ -454,13 +351,13 @@ async function fetchFragmentContent(path: string): Promise<string | null> {
 }
 
 // Add element IDs (like client-side addIds)
-function addIds(el: any, manifestId: string, targetManifestId: string) {
+function addIds(el, manifestId, targetManifestId) {
   if (manifestId) el.setAttribute('data-manifest-id', manifestId);
   if (targetManifestId) el.setAttribute('data-adobe-target-testid', targetManifestId);
 }
 
 // Clean up marked elements (like client-side deleteMarkedEls)
-function cleanupMarkedElements(rewriter: HtmlRewritingStream) {
+function cleanupMarkedElements(rewriter) {
   // Remove elements marked with p13n-deleted class
   rewriter.onElement('[class*="p13n-deleted"]', (el) => {
     el.remove();
@@ -468,7 +365,7 @@ function cleanupMarkedElements(rewriter: HtmlRewritingStream) {
 }
 
 // Process fragment content like client-side fragment.js
-async function processFragmentContent(fragmentHTML: string, fragmentPath: string, placeholders: any = {}): Promise<string> {
+async function processFragmentContent(fragmentHTML, fragmentPath, placeholders = {}) {
   try {
     // Step 1: Apply placeholder replacement (like client-side)
     let processedHTML = replacePlaceholders(fragmentHTML, placeholders);
@@ -497,8 +394,8 @@ async function processFragmentContent(fragmentHTML: string, fragmentPath: string
 }
 
 // Extract sections from HTML content (like client-side doc.querySelectorAll('body > div'))
-function extractSections(html: string): string[] {
-  const sections: string[] = [];
+function extractSections(html) {
+  const sections = [];
   
   // Use regex to find body > div sections (like client-side)
   const bodyDivRegex = /<body[^>]*>([\s\S]*?)<\/body>/i;
@@ -527,7 +424,6 @@ function extractSections(html: string): string[] {
   } else {
     // If no body tag found, extract the inner content from the outer div
     // This handles cases where the fragment content doesn't have a body wrapper
-    // const outerDivRegex = /<div[^>]*>([\s\S]*?)<\/div>$/i;
     const outerDivRegex = /<div[^>]*>([\s\S]*?)<\/div>\s*$/i;
     const outerMatch = html.match(outerDivRegex);
     
@@ -545,12 +441,11 @@ function extractSections(html: string): string[] {
 }
 
 // Create fragment structure like client-side createTag and append
-function createFragmentStructure(sections: string[], fragmentPath: string): string {
+function createFragmentStructure(sections, fragmentPath) {
   // Use normalizePath to get the correct data-path format
   const normalizedPath = normalizePath(fragmentPath, true);
   
   // Create fragment wrapper like client-side createTag
-  // let fragmentHTML = `<div class="fragment" data-path="${normalizedPath}">`;
   let fragmentHTML = ``;
   
   // Append sections like client-side fragment.append(...sections)
@@ -559,13 +454,11 @@ function createFragmentStructure(sections: string[], fragmentPath: string): stri
     fragmentHTML += section;
   });
   
-  // fragmentHTML += '</div>';
-  
   return fragmentHTML;
 }
 
 // Replace relative media paths with absolute URLs (like client-side replaceDotMedia)
-function replaceDotMedia(fragmentHTML: string, fragmentPath: string): string {
+function replaceDotMedia(fragmentHTML, fragmentPath) {
   // Extract base URL from fragment path
   let baseUrl = '';
   try {
@@ -601,7 +494,7 @@ function replaceDotMedia(fragmentHTML: string, fragmentPath: string): string {
 }
 
 // Create fragment wrapper similar to client-side createTag approach
-function createFragmentWrapper(fragmentHTML: string, path: string, manifestId?: string, targetManifestId?: string): string {
+function createFragmentWrapper(fragmentHTML, path, manifestId, targetManifestId) {
   // Since processFragmentContent already creates the fragment structure,
   // we just need to add the manifest IDs to the existing fragment div
   
@@ -625,7 +518,7 @@ function createFragmentWrapper(fragmentHTML: string, path: string, manifestId?: 
 }
 
 // Create content element (like client-side createContent)
-function createContentElement(content: string, cmd: any, placeholders: any = {}): string {
+function createContentElement(content, cmd, placeholders = {}) {
   const isFragment = content.startsWith('/') || content.startsWith('http');
   
   let elementHTML = '';
@@ -673,7 +566,7 @@ function createContentElement(content: string, cmd: any, placeholders: any = {})
   return elementHTML;
 }
 
-function createFragmentHTML(content: string, el: any): string {
+function createFragmentHTML(content, el) {
   // Match personalization.js createFrag behavior exactly
   const noParagraphWrap = el?.getAttribute('class')?.includes('p') || false;
   

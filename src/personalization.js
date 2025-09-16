@@ -9,6 +9,7 @@ import {
   loadScript,
   localizeLink,
   getFederatedUrl,
+  edgePers,
 } from '../../utils/utils.js';
 
 /* c8 ignore start */
@@ -609,6 +610,10 @@ export function handleCommands(
   addSectionAnchors(rootEl);
   commands.forEach((cmd) => {
     const { action, content, selector } = cmd;
+    if (cmd.selector.includes('marquee')) {
+      cmd.completed = true;
+      return;
+    }
     cmd.content = forceInline && getSelectorType(content) === 'fragment' ? addHash(content, INLINE_HASH) : content;
     if (selector.startsWith(IN_BLOCK_SELECTOR_PREFIX)) {
       registerInBlockActions(cmd);
@@ -1135,6 +1140,7 @@ function compareExecutionOrder(a, b) {
 export function cleanAndSortManifestList(manifests, config = getConfig()) {
   const manifestObj = {};
   let allManifests = manifests;
+  if (edgePers) allManifests = [];
   let targetManifestWinsOverServerManifest = false;
   if (config.mep?.experiments) allManifests = [...manifests, ...config.mep.experiments];
   allManifests.forEach((manifest) => {

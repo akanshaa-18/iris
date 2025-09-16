@@ -1,25 +1,13 @@
 import { httpRequest } from "http-request";
 import { logger } from "log";
-import { combineMepSources, determineLocale, normalizePath } from "./ManifestUtils";
-import { parseManifestConfig, Manifest } from "./ManifestParser";
-
-// Types
-export interface ManifestSource {
-  manifestPath: string;
-  source: string[];
-}
-
-export interface LoadedManifest {
-  manifest: Manifest;
-  source: string[];
-}
+import { combineMepSources, determineLocale, normalizePath } from "./ManifestUtils.js";
+import { parseManifestConfig } from "./ManifestParser.js";
 
 // Fetch manifest data from URL
-async function fetchManifestData(manifestPath: string, request?: any): Promise<any> {
+async function fetchManifestData(manifestPath, request) {
   try {
     // Normalize the manifest path first
     const normalizedPath = normalizePath(manifestPath, true, request);
-    // logger.log(`Fetching manifest from: ${normalizedPath}`);
     
     const response = await httpRequest(normalizedPath, {
       headers: {
@@ -55,7 +43,6 @@ async function fetchManifestData(manifestPath: string, request?: any): Promise<a
       return null;
     }
 
-    // logger.log(`Successfully loaded manifest: ${normalizedPath}`);
     return manifestData;
   } catch (error) {
     logger.log(`Error fetching manifest ${manifestPath}: ${error}`);
@@ -65,9 +52,9 @@ async function fetchManifestData(manifestPath: string, request?: any): Promise<a
 
 // Load and parse a single manifest
 async function loadSingleManifest(
-  manifestSource: ManifestSource, 
-  request: any
-): Promise<LoadedManifest | null> {
+  manifestSource, 
+  request
+) {
   try {
     const manifestData = await fetchManifestData(manifestSource.manifestPath, request);
     if (!manifestData) {
@@ -91,7 +78,7 @@ async function loadSingleManifest(
 }
 
 // Sort manifests by execution order
-function sortManifestsByExecutionOrder(manifests: LoadedManifest[]): LoadedManifest[] {
+function sortManifestsByExecutionOrder(manifests) {
   return manifests.sort((a, b) => {
     const orderA = a.manifest.executionOrder;
     const orderB = b.manifest.executionOrder;
@@ -102,8 +89,8 @@ function sortManifestsByExecutionOrder(manifests: LoadedManifest[]): LoadedManif
 }
 
 // Clean and consolidate manifest list (similar to cleanAndSortManifestList in personalization.js)
-function cleanAndSortManifestList(manifests: LoadedManifest[]): LoadedManifest[] {
-  const manifestObj: Record<string, LoadedManifest> = {};
+function cleanAndSortManifestList(manifests) {
+  const manifestObj = {};
   
   manifests.forEach((manifest) => {
     try {
@@ -133,8 +120,8 @@ function cleanAndSortManifestList(manifests: LoadedManifest[]): LoadedManifest[]
 }
 
 // Manual URLSearchParams implementation for EdgeWorkers
-function parseQueryParams(queryString: string): Record<string, string> {
-  const params: Record<string, string> = {};
+function parseQueryParams(queryString) {
+  const params = {};
   
   if (!queryString) return params;
   
@@ -149,13 +136,13 @@ function parseQueryParams(queryString: string): Record<string, string> {
 }
 
 // Load manifests from HTML content - Return RAW SOURCES only (like client-side combineMepSources)
-export async function loadManifests(htmlContent: string, request: any): Promise<ManifestSource[]> {
+export async function loadManifests(htmlContent, request) {
   try {
     // Parse query parameters manually
     const queryParams = parseQueryParams(request.query || '');
     
     // Determine locale from request
-    const { determineLocale } = await import('../Utilities/Utilities');
+    const { determineLocale } = await import('../Utilities/Utilities.js');
     const locale = determineLocale(request);
     
     // Get manifest sources from HTML - Return RAW SOURCES only
@@ -165,12 +152,6 @@ export async function loadManifests(htmlContent: string, request: any): Promise<
       logger.log("No manifest sources found");
       return [];
     }
-    
-    // Log manifest sources to detect duplicates
-    // logger.log('Manifest sources found:', manifestSources.length);
-    manifestSources.forEach((source, index) => {
-    //   logger.log(`Source ${index + 1}: ${source.manifestPath}`);
-    });
     
     // Return RAW SOURCES only (no processing) - like client-side combineMepSources
     return manifestSources;
@@ -182,14 +163,12 @@ export async function loadManifests(htmlContent: string, request: any): Promise<
 
 // Load Target manifests from API - Return RAW SOURCES only (like client-side handleAlloyResponse)
 export async function loadTargetManifests(
-  request: any,
-  authState: any
-): Promise<ManifestSource[]> {
+  request,
+  authState
+) {
   try {
-    // logger.log("Loading Target manifests from API");
-    
     // Import the Target API call function and handleAlloyResponse
-    const { fetchPersonalizationData, handleAlloyResponse } = await import('./Personalize');
+    const { fetchPersonalizationData, handleAlloyResponse } = await import('./Personalize.js');
     
     // Get Target response
     const targetResponse = await fetchPersonalizationData(request, authState);
@@ -207,10 +186,8 @@ export async function loadTargetManifests(
       return [];
     }
     
-    // logger.log(`Found ${targetManifests.length} Target manifests from handleAlloyResponse`);
-    
     // Convert Target manifests to RAW SOURCES format (like client-side)
-    const rawTargetSources: ManifestSource[] = [];
+    const rawTargetSources = [];
     
     for (const targetManifest of targetManifests) {
       try {
@@ -224,7 +201,6 @@ export async function loadTargetManifests(
       }
     }
     
-    // logger.log(`Successfully loaded ${rawTargetSources.length} Target manifest sources`);
     return rawTargetSources;
   } catch (error) {
     logger.log(`Error loading Target manifests: ${error}`);
@@ -234,29 +210,20 @@ export async function loadTargetManifests(
 
 // Get all manifests (personalization + target) - Combine RAW SOURCES only (no processing)
 export async function getAllManifests(
-  htmlContent: string,
-  request: any,
-  authState?: any
-): Promise<ManifestSource[]> {
+  htmlContent,
+  request,
+  authState
+) {
   const personalizationManifests = await loadManifests(htmlContent, request);
   const targetManifests = await loadTargetManifests(request, authState);
   
-  // Log to detect duplicates
-//   logger.log('Personalization manifests:', personalizationManifests.length);
-//   logger.log('Target manifests:', targetManifests.length);
-  
   const allManifests = [...personalizationManifests, ...targetManifests];
-  
-  // Log all manifest paths to detect duplicates
-  allManifests.forEach((manifest, index) => {
-    // logger.log(`Manifest ${index + 1}: ${manifest.manifestPath}`);
-  });
   
   return allManifests;
 }
 
 // Validate manifest structure
-export function validateManifest(manifest: Manifest): boolean {
+export function validateManifest(manifest) {
   if (!manifest || !manifest.variants || !manifest.variantNames) {
     return false;
   }
@@ -271,7 +238,7 @@ export function validateManifest(manifest: Manifest): boolean {
 }
 
 // Get manifest summary for logging
-export function getManifestSummary(manifests: LoadedManifest[]): string {
+export function getManifestSummary(manifests) {
   if (!manifests.length) return "No manifests loaded";
   
   const summary = manifests.map(m => ({
